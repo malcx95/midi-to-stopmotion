@@ -4,7 +4,6 @@ import midi
 import argparse
 import os
 import midiparse
-import notes
 
 
 def print_instruments(pattern):
@@ -18,8 +17,8 @@ def print_instruments(pattern):
     for instrument in instruments:
         print "Instrument \'{}\' plays these tones:".format(instrument)
         for note in instruments[instrument]:
-            octave = notes.get_octave(note)
-            tone = notes.get_tone(note, octave)
+            octave = midiparse.note_number_to_octave(note)
+            tone = midiparse.note_number_to_tone(note, octave)
             print tone + str(octave)
         print ""
 
@@ -38,11 +37,15 @@ def main():
 
 
     pattern = midi.read_midifile(midifile)
+    pattern.make_ticks_abs()
 
     if args.instruments:
         print_instruments(pattern)
+    else:
+        for track in pattern[1:]:
+            for note in midiparse.analyse_track(track):
+                print note
 
-    # print pattern
 
 if __name__ == "__main__":
     main()
