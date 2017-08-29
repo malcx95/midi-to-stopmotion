@@ -61,6 +61,11 @@ def note_number_to_octave(note_number):
 def note_number_to_tone(note_number, octave):
     return TONES[note_number - octave * len(TONES)]
 
+def note_number_to_note_string(note_number):
+    octave = note_number_to_octave(note_number)
+    tone = note_number_to_tone(note_number, octave)
+    return tone + str(octave)
+
 
 def get_instruments(midipattern):
     """
