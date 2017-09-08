@@ -6,6 +6,7 @@ import pdb
 import sys
 import os
 import midiparse
+import videocomposing
 import moviepy.editor as edit
 
 
@@ -67,11 +68,16 @@ def main():
             instrument_clips[instrument_name] = {}
             for note_number in instruments[instrument_name]:
                 note_str = midiparse.note_number_to_note_string(note_number)
-                file_name = os.path.join(source_dir, instrument_name, note_str + ".mp4")
+                file_name = os.path.join(source_dir, instrument_name,
+                                         note_str + ".mp4")
                 if not os.path.isfile(file_name):
-                    error("The required file \"{}\" couldn't be found".format(file_name))
+                    error("The required file \"{}\" couldn't be found"
+                          .format(file_name))
 
-                instrument_clips[instrument_name] = edit.VideoFileClip(file_name)
+                instrument_clips[instrument_name][note_number] = \
+                    edit.VideoFileClip(file_name)
+
+        final_clip = videocomposing.compose(instrument_clips, pattern)
 
     sys.exit(0)
 

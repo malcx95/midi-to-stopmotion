@@ -2,6 +2,8 @@ import midi
 
 TONES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
+DEFAULT_TEMPO = 500000
+
 class Note:
 
     def __init__(self, note_number, start, end):
@@ -61,10 +63,21 @@ def note_number_to_octave(note_number):
 def note_number_to_tone(note_number, octave):
     return TONES[note_number - octave * len(TONES)]
 
+
 def note_number_to_note_string(note_number):
     octave = note_number_to_octave(note_number)
     tone = note_number_to_tone(note_number, octave)
     return tone + str(octave)
+
+
+def get_tempo(midipattern):
+    """Returns the tempo of the song in microseconds per beat"""
+    for p in midipattern[0]:
+        if isinstance(p, midi.SetTempoEvent):
+            return p.get_mpqn()
+
+    return DEFAULT_TEMPO
+
 
 
 def get_instruments(midipattern):
