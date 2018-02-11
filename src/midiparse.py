@@ -4,6 +4,16 @@ TONES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 DEFAULT_TEMPO = 500000
 
+class TrackEvent:
+
+    def __init__(self, time, num_simultaneous_notes,
+                 started_notes=[], ended_notes=[]):
+        self.time = time
+        self.num_simultaneous_notes = num_simultaneous_notes
+        self.started_notes = started_notes
+        self.ended_notes = ended_notes
+
+
 class Note:
 
     def __init__(self, note_number, start, end):
@@ -42,6 +52,7 @@ def analyse_track(miditrack):
     """
     curr_events = []
     parsed_notes = []
+    parsed_events = []
     for event in miditrack:
         if _is_note_start(event):
             curr_events.append(event)
@@ -54,6 +65,12 @@ def analyse_track(miditrack):
                     curr_events.remove(ev)
                     break
     return parsed_notes
+
+
+def _get_track_events(parsed_notes):
+    # TODO implement such that it returns a list
+    # of TrackEvents everytime a note starts and ends
+    pass
 
 
 def note_number_to_octave(note_number):
