@@ -1,3 +1,4 @@
+import pdb
 import midi
 
 TONES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -6,12 +7,16 @@ DEFAULT_TEMPO = 500000
 
 class TrackEvent:
 
-    def __init__(self, time, num_simultaneous_notes,
-                 started_notes=[], ended_notes=[]):
+    def __init__(self, time, num_simultaneous_notes):
         self.time = time
         self.num_simultaneous_notes = num_simultaneous_notes
-        self.started_notes = started_notes
-        self.ended_notes = ended_notes
+        self.started_notes = []
+        self.ended_notes = []
+
+    def __repr__(self):
+        return "{} simultaneous notes, {} started, {} ended\n".format(
+            self.num_simultaneous_notes, 
+            len(self.started_notes), len(self.ended_notes))
 
 
 class Note:
@@ -48,11 +53,12 @@ def _is_note_end(event):
 
 def analyse_track(miditrack):
     """
-    Converts a miditrack to a list of Notes.
+    Converts a miditrack to a list of Notes and a dictionary of events
     """
     curr_events = []
     parsed_notes = []
-    parsed_events = []
+    parsed_events = {}
+    max_simultaneous_notes = 0
     for event in miditrack:
         if _is_note_start(event):
             curr_events.append(event)
@@ -61,16 +67,35 @@ def analyse_track(miditrack):
                 ev = curr_events[i]
                 p = _event_pitch(ev)
                 if _event_pitch(ev) == _event_pitch(event):
-                    parsed_notes.append(Note(p, ev.tick, event.tick))
+                    note = Note(p, ev.tick, event.tick)
+                    parsed_notes.append(note)
                     curr_events.remove(ev)
+
+                    curr_simultaneous_notes = \
+                        _add_note_to_parsed_events(parsed_events, note)
+                    max_simultaneous_notes = max(max_simultaneous_notes, 
+                                                curr_simultaneous_notes)
                     break
-    return parsed_notes
+    return parsed_notes, parsed_events, max_simultaneous_notes
 
 
-def _get_track_events(parsed_notes):
-    # TODO implement such that it returns a list
-    # of TrackEvents everytime a note starts and ends
-    pass
+def _add_note_to_parsed_events(parsed_events, note):
+    start = note.start
+    end = note.end
+    num_simultaneous_notes = 1
+    if start not in parsed_events:
+        parsed_events[start] = TrackEvent(start, 1)
+        parsed_events[start].started_notes.append(note)
+    else:
+        parsed_events[start].started_notes.append(note)
+        parsed_events[start].num_simultaneous_notes += 1
+        num_simultaneous_notes = parsed_events[start].num_simultaneous_notes
+    if end not in parsed_events:
+        parsed_events[end] = TrackEvent(end, 0)
+        parsed_events[end].ended_notes.append(note)
+    else:
+        parsed_events[end].ended_notes.append(note)
+    return num_simultaneous_notes
 
 
 def note_number_to_octave(note_number):
@@ -106,7 +131,7 @@ def get_instruments(midipattern):
     i = 0
     for track in midipattern[1:]:
         i += 1
-        name = _get_instrument_name(track, i)
+        name = get_instrument_name(track, i)
         result[name] = _extract_notes(track)
     return result
 
@@ -125,14 +150,18 @@ def _extract_notes(miditrack):
     return sorted(note_numbers)
 
 
-def _get_instrument_name(miditrack, number):
+def get_instrument_name(miditrack, number=None):
     """
     Gets the instrument name (track name) of the midi track.
     """
     for event in miditrack:
         if isinstance(event, midi.TrackNameEvent):
             return event.text
-    return "Untitled Instrument " + str(number)
+    if number is not None:
+        # FIXME this is ugly
+        return "Untitled Instrument " + str(number)
+    else:
+        return None
 
 
 def get_song_name(midipattern):

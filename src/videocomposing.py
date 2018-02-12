@@ -2,33 +2,30 @@ import moviepy.editor as edit
 import pdb
 import midiparse
 
-# TODO remove
-class VideoNote:
-
-    def __init__(self, note, clip):
-        self.note = note
-        self.clip = clip
-        
 
 def compose(instrument_clips, midipattern):
     tempo = midiparse.get_tempo(midipattern)
-    # TODO you have to multiply the times in analyze track
-    # with the tempo and time signature
     track_clips = []
     for track in midipattern[1:]:
-        track_clips.append(_process_track(instrument_clips, track, tempo))
-        pdb.set_trace()
+        name = midiparse.get_instrument_name(track)
+        if name is None:
+            # FIXME this is ugly
+            name = "Untitled Instrument 1"
+        track_clips.append(_process_track(instrument_clips[name],
+                                          track, tempo))
 
 
-def _process_track(instrument_clips, midi_track, tempo):
+def _process_track(clips, midi_track, tempo):
     """
     Composes one midi track into a stop motion video clip.
     Returns a CompositeVideoClip.
     """
-    clips = []
-    parsed_notes = midiparse.analyse_track(track)
+    parsed_clips = []
+    parsed_notes, parsed_events, max_simultaneous_notes = \
+            midiparse.analyse_track(midi_track)
+    pdb.set_trace()
     for note in parsed_notes:
         note_number = note.note_number
-        clip = instrument_clips[note_number].copy()
+        clip = clips[note_number].copy()
         # TODO set clip start
 
