@@ -28,6 +28,7 @@ class Note:
         self.start = start
         self.end = end
         self.duration = end - start
+        self.video_position = None
 
     def __repr__(self):
         return "{}{} from {} to {} (duration: {})".format(self.tone, self.octave, 
@@ -90,6 +91,7 @@ def _add_note_to_parsed_events(parsed_events, note):
         parsed_events[start].started_notes.append(note)
         parsed_events[start].num_simultaneous_notes += 1
         num_simultaneous_notes = parsed_events[start].num_simultaneous_notes
+    note.video_position = num_simultaneous_notes - 1
     if end not in parsed_events:
         parsed_events[end] = TrackEvent(end, 0)
         parsed_events[end].ended_notes.append(note)

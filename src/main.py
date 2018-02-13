@@ -77,7 +77,9 @@ def main():
                 instrument_clips[instrument_name][note_number] = \
                     edit.VideoFileClip(file_name)
 
-        final_clip = videocomposing.compose(instrument_clips, pattern)
+        final_clip = videocomposing.compose(instrument_clips, pattern,
+                                           1920, 1080)
+        final_clip.write_videofile('test.mp4')
 
     sys.exit(0)
 
