@@ -115,13 +115,20 @@ def note_number_to_note_string(note_number):
 
 
 def get_tempo(midipattern):
-    """Returns the tempo of the song in microseconds per beat"""
+    """Returns the tempo of the song in bpm"""
     for p in midipattern[0]:
         if isinstance(p, midi.SetTempoEvent):
-            return p.get_mpqn()
+            return p.get_bpm()
 
     return DEFAULT_TEMPO
 
+
+def get_resolution(midipattern):
+    for p in midipattern[0]:
+        if isinstance(p, midi.TimeSignatureEvent):
+            # FIXME find the actual resolution
+            return 256
+    return None
 
 
 def get_instruments(midipattern):

@@ -8,6 +8,8 @@ import random
 
 def compose(instrument_clips, midipattern, width, height):
     tempo = midiparse.get_tempo(midipattern)
+    resolution = midiparse.get_resolution(midipattern)
+    pulse_length = 60/(tempo*resolution)
     track_clips = []
     for track in midipattern[1:]:
         name = midiparse.get_instrument_name(track)
@@ -15,9 +17,11 @@ def compose(instrument_clips, midipattern, width, height):
             # FIXME this is ugly
             name = "Untitled Instrument 1"
         track_clips.append(_process_track(instrument_clips[name],
-                                          track, tempo, width, height))
-    # return edit.CompositeVideoClip(size=(width, height), clips=track_clips)
-    return track_clips[0]
+                                          track, pulse_length, width, height))
+    if len(track_clips) == 1:
+        return track_clips[0]
+    else:
+        return edit.CompositeVideoClip(size=(width, height), clips=track_clips)
 
 
 def _partition(width, height, num_sim_notes, pos):
@@ -56,7 +60,7 @@ def _partition(width, height, num_sim_notes, pos):
 
 
 
-def _process_track(clips, midi_track, tempo, width, height):
+def _process_track(clips, midi_track, pulse_length, width, height):
     """
     Composes one midi track into a stop motion video clip.
     Returns a CompositeVideoClip.
@@ -71,13 +75,11 @@ def _process_track(clips, midi_track, tempo, width, height):
         num_sim_notes = curr_event.num_simultaneous_notes
         x, y, w, h = _partition(width, height, 
                                 num_sim_notes, note.video_position)
-        # TODO convert to seconds!
-        # Do this by multiplying the tempo by the cc-part (Midi ticks
-        # per metronome click) of the time signature message
-        clip = clip.set_start(note.start)
-        clip = clip.set_end(note.end)
+        clip = clip.set_start(note.start*pulse_length)
+        d = clip.duration
+        clip = clip.set_duration(min(note.duration*pulse_length, d))
         clip = clip.set_position((x, y))
         clip = fx.resize(clip, newsize=(w, h))
         parsed_clips.append(clip)
-    return edit.CompositeVideoClip(size=(height, width), clips=parsed_clips)
+    return edit.CompositeVideoClip(size=(width, height), clips=parsed_clips)
 
