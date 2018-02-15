@@ -42,6 +42,10 @@ def main():
     parser.add_argument('-s', '--source', type=str,
                         help='Path to directory where videos of the instruments can be found',
                         required=True)
+    parser.add_argument('-a', 
+                        '--auto',
+                        help='Automatically analyse the video and extract notes',
+                        action='store_true')
     parser.add_argument('-i', '--instruments', help='Get the instruments', action='store_true')
 
     args = parser.parse_args()
