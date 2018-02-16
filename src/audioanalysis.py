@@ -7,12 +7,17 @@ import pdb
 import scipy.signal as signal
 import os
 
-AUDIO_THRESHOLD = 0.1
+START_THRESHOLD = 0.02
+END_THRESHOLD = 0.01
 DOWNSAMPLE_FACTOR = 2
-KERNEL_SIZE = 500
+KERNEL_SIZE = 7000
+STANDARD_OFFSET = 0.1
 
 def analyse_instrument(video):
     clips = _split_clip(video)
+    for i, clip in enumerate(clips):
+        print clip.duration
+        clip.write_videofile('testdir/test' + str(i) + '.mp4')
     
 
 def _remove_tmp_audio(file_name):
@@ -36,24 +41,31 @@ def _split_clip(video):
 
     # TODO record with more silence between notes
 
-    # while i < len(filtered):
-    #     if filtered[i] > AUDIO_THRESHOLD:
-    #         start = i
-    #         while [i]:
-    #             i += 1
-    #         end = i - 1
-    #         indices.append((start, end))
-    #     else:
-    #         i += 1
+    while i < len(filtered):
+        if filtered[i] > START_THRESHOLD:
+            start = i
+            while i < len(filtered) and filtered[i] > END_THRESHOLD:
+                i += 1
+            end = i - 1
+            indices.append((float(start)/float(len(filtered)),
+                            float(end)/float(len(filtered))))
+        else:
+            i += 1
+    
+    tot_duration = video.duration
+    clips = []
+    for start, end in indices:
+        clips.append(video.subclip(start*tot_duration - STANDARD_OFFSET,
+                                   end*tot_duration))
+    return clips
 
-    print indices
-
-    plt.figure(1)
-    plt.subplot(2, 1, 1)
-    plt.plot(clip_abs)
-    plt.subplot(2, 1, 2)
-    plt.plot(filtered)
-    plt.show()
+    
+    # plt.figure(1)
+    # plt.subplot(2, 1, 1)
+    # plt.plot(clip_abs)
+    # plt.subplot(2, 1, 2)
+    # plt.plot(filtered)
+    # plt.show()
 
 
 def main():
