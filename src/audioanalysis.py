@@ -1,11 +1,12 @@
 import numpy as np
-from scipy.fftpack import fft
+from scipy.fftpack import fft, fftfreq
 import scipy
 import moviepy.editor as edit
 import matplotlib.pyplot as plt
 import pdb
 import scipy.signal as signal
 import os
+from frequencies import FREQUENCIES
 
 START_THRESHOLD = 0.02
 END_THRESHOLD = 0.01
@@ -13,12 +14,29 @@ DOWNSAMPLE_FACTOR = 2
 KERNEL_SIZE = 7000
 STANDARD_OFFSET = 0.1
 
+SAMPLE_FREQUENCY = 44100
+
+
 def analyse_instrument(video):
     clips = _split_clip(video)
-    for i, clip in enumerate(clips):
-        print clip.duration
-        clip.write_videofile('testdir/test' + str(i) + '.mp4')
-    
+    identity_frequencies(clips)
+    # TODO identifying frequencies is hard,
+    # just use the analysis to adjust timing
+
+
+def identity_frequencies(clips):
+    for _, audio in clips:
+        audio_ft = fft(audio)
+        plt.figure(1)
+        xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+        dominant_freq = np.argmax(np.abs(audio_ft))
+        freqs = fftfreq(len(audio_ft), d=1.0/SAMPLE_FREQUENCY)
+        dominant_freq_hz = freqs[dominant_freq]
+        print dominant_freq
+        print dominant_freq_hz
+        print len(audio_ft)
+        plt.plot(np.abs(audio_ft))
+        plt.show()
 
 def _remove_tmp_audio(file_name):
     os.remove(file_name)
@@ -26,8 +44,9 @@ def _remove_tmp_audio(file_name):
 
 def _extract_audio(video):
     audio = video.audio
-    a = audio.to_soundarray(buffersize=20000)
-    return signal.decimate((a[:, 0] + a[:, 1])*0.5, DOWNSAMPLE_FACTOR)
+    a = audio.to_soundarray(fps=SAMPLE_FREQUENCY, buffersize=20000)
+    return (a[:, 0] + a[:, 1])*0.5
+    # return signal.decimate((a[:, 0] + a[:, 1])*0.5, DOWNSAMPLE_FACTOR)
     
 
 def _split_clip(video):
@@ -39,33 +58,23 @@ def _split_clip(video):
     i = 0
     indices = []
 
-    # TODO record with more silence between notes
-
     while i < len(filtered):
         if filtered[i] > START_THRESHOLD:
             start = i
             while i < len(filtered) and filtered[i] > END_THRESHOLD:
                 i += 1
             end = i - 1
-            indices.append((float(start)/float(len(filtered)),
-                            float(end)/float(len(filtered))))
+            indices.append((start, end))
         else:
             i += 1
     
     tot_duration = video.duration
-    clips = []
-    for start, end in indices:
-        clips.append(video.subclip(start*tot_duration - STANDARD_OFFSET,
-                                   end*tot_duration))
-    return clips
-
-    
-    # plt.figure(1)
-    # plt.subplot(2, 1, 1)
-    # plt.plot(clip_abs)
-    # plt.subplot(2, 1, 2)
-    # plt.plot(filtered)
-    # plt.show()
+    a_samples = float(len(filtered))
+    return [(video.subclip(tot_duration*float(start)/a_samples
+                           - STANDARD_OFFSET,
+                           tot_duration*float(end)/a_samples),
+             audio[start:end]) for start, end in indices[0:5]]
+# TODO REMOVE SLICING!
 
 
 def main():
