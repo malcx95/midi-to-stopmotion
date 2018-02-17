@@ -40,13 +40,14 @@ def main():
 
     parser.add_argument('-m', '--midifile', type=str, help='The MIDI file', required=True)
     parser.add_argument('-s', '--source', type=str,
-                        help='Path to directory where videos of the instruments can be found',
-                        required=True)
+                        help='Path to directory where videos of the instruments can be found')
     parser.add_argument('-a', 
                         '--auto',
                         help='Automatically analyse the video and extract notes',
                         action='store_true')
     parser.add_argument('-i', '--instruments', help='Get the instruments', action='store_true')
+    parser.add_argument('-d', '--one',
+                       help='Use the only provided instrument for all instruments', action='store_true')
 
     args = parser.parse_args()
 
@@ -55,7 +56,7 @@ def main():
         parser.error("MIDI file \"{}\" not found".format(midifile))
 
     source_dir = args.source
-    if not os.path.isdir(source_dir):
+    if not args.instruments and not os.path.isdir(source_dir):
         parser.error("Source directory \"{}\" not found".format(source_dir))
 
     pattern = midi.read_midifile(midifile)
@@ -72,8 +73,12 @@ def main():
             instrument_clips[instrument_name] = {}
             for note_number in instruments[instrument_name]:
                 note_str = midiparse.note_number_to_note_string(note_number)
-                file_name = os.path.join(source_dir, instrument_name,
-                                         note_str + ".mp4")
+                file_name = ""
+                if args.one:
+                    file_name = os.path.join(source_dir, note_str + ".mp4")
+                else:
+                    file_name = os.path.join(source_dir, instrument_name,
+                                             note_str + ".mp4")
                 if not os.path.isfile(file_name):
                     error("The required file \"{}\" couldn't be found"
                           .format(file_name))
@@ -83,7 +88,7 @@ def main():
 
         final_clip = videocomposing.compose(instrument_clips, pattern,
                                            1920, 1080)
-        final_clip.write_videofile('test.mp4')
+        final_clip.write_videofile('output.mp4')
 
     sys.exit(0)
 

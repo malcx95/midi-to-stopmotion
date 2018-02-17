@@ -21,7 +21,12 @@ def compose(instrument_clips, midipattern, width, height):
     if len(track_clips) == 1:
         return track_clips[0]
     else:
-        return edit.CompositeVideoClip(size=(width, height), clips=track_clips)
+        final_clips = []
+        for i, clip in enumerate(track_clips):
+            x, y, w, h = _partition(width, height, len(track_clips), i)
+            final_clips.append(
+                fx.resize(clip, newsize=(w, h)).set_position(x, y))
+        return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
 
 
 def _partition(width, height, num_sim_notes, pos):
@@ -56,8 +61,6 @@ def _partition(width, height, num_sim_notes, pos):
         rx = random.randint(-w//2, w//2) + w
         ry = random.randint(-h//2, h//2) + h
         return rx, ry, w, h
-
-
 
 
 def _process_track(clips, midi_track, pulse_length, width, height):
