@@ -1,32 +1,60 @@
 import moviepy.editor as edit
 import moviepy.video.fx.all as fx
-#import moviepy.video as video
 import pdb
 import midiparse
 import random
+import os
 
 
-def compose(instrument_clips, midipattern, width, height):
+def compose(instruments, midipattern, width, height, source_dir):
     tempo = midiparse.get_tempo(midipattern)
     resolution = midiparse.get_resolution(midipattern)
     pulse_length = 60/(tempo*resolution)
-    track_clips = []
-    for track in midipattern[1:]:
+    # pdb.set_trace()
+    written_clips = []
+    for i, track in enumerate(midipattern[1:]):
+        print "Composing track " + str(i) + "..."
         name = midiparse.get_instrument_name(track)
         if name is None:
             # FIXME this is ugly
             name = "Untitled Instrument 1"
-        track_clips.append(_process_track(instrument_clips[name],
-                                          track, pulse_length, width, height))
-    if len(track_clips) == 1:
-        return track_clips[0]
-    else:
-        final_clips = []
-        for i, clip in enumerate(track_clips):
-            x, y, w, h = _partition(width, height, len(track_clips), i)
-            final_clips.append(
-                fx.resize(clip, newsize=(w, h)).set_position(x, y))
-        return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
+        instrument_clips = _load_instrument_clips(name, 
+                                                  instruments[name],
+                                                  source_dir)
+        track_clip = _process_track(instrument_clips,
+                                          track, pulse_length, width, height)
+        file_name = name + '.mp4'
+        track_clip.write_videofile(file_name)
+        written_clips.append(file_name)
+        _delete_clips(instrument_clips)
+
+    final_clips = []
+    for i, file_name in enumerate(written_clips):
+        clip = edit.VideoFileClip(file_name)
+        x, y, w, h = _partition(width, height, len(track_clips), i)
+        final_clips.append(
+            fx.resize(clip, newsize=(w, h)).set_position(x, y))
+    return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
+
+
+def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
+    res = {}
+    for note_number in instrument_notes:
+        note_str = midiparse.note_number_to_note_string(note_number)
+        file_name = ""
+        file_name = os.path.join(source_dir, instrument_name,
+                                     note_str + ".mp4")
+        if not os.path.isfile(file_name):
+            error("The required file \"{}\" couldn't be found"
+                  .format(file_name))
+
+        res[note_number] = edit.VideoFileClip(file_name)
+    return res
+
+def _delete_clips(instrument_clips):
+    keys = instrument_clips.keys()
+    for key in keys:
+        del instrument_clips[key]
 
 
 def _partition(width, height, num_sim_notes, pos):

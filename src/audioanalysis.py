@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 from scipy.fftpack import fft, fftfreq
 import scipy
@@ -6,6 +8,7 @@ import matplotlib.pyplot as plt
 import pdb
 import scipy.signal as signal
 import os
+import argparse
 from frequencies import FREQUENCIES
 
 START_THRESHOLD = 0.02
@@ -17,11 +20,10 @@ STANDARD_OFFSET = 0.1
 SAMPLE_FREQUENCY = 44100
 
 
-def analyse_instrument(video):
+def analyse_instrument(video, output_name):
     clips = _split_clip(video)
-    identity_frequencies(clips)
-    # TODO identifying frequencies is hard,
-    # just use the analysis to adjust timing
+    for i, clip in enumerate(clips):
+        clip.write_videofile(output_name.split('.')[0] + str(i) + '.mp4')
 
 
 def identity_frequencies(clips):
@@ -44,7 +46,7 @@ def _remove_tmp_audio(file_name):
 
 def _extract_audio(video):
     audio = video.audio
-    a = audio.to_soundarray(fps=SAMPLE_FREQUENCY, buffersize=20000)
+    a = audio.to_soundarray(fps=SAMPLE_FREQUENCY, buffersize=25000)
     return (a[:, 0] + a[:, 1])*0.5
     # return signal.decimate((a[:, 0] + a[:, 1])*0.5, DOWNSAMPLE_FACTOR)
     
@@ -70,16 +72,20 @@ def _split_clip(video):
     
     tot_duration = video.duration
     a_samples = float(len(filtered))
-    return [(video.subclip(tot_duration*float(start)/a_samples
+    return [video.subclip(tot_duration*float(start)/a_samples
                            - STANDARD_OFFSET,
-                           tot_duration*float(end)/a_samples),
-             audio[start:end]) for start, end in indices[0:5]]
-# TODO REMOVE SLICING!
-
+                           tot_duration*float(end)/a_samples)
+                          for start, end in indices]
 
 def main():
-    video = edit.VideoFileClip('../test-auto/testvideo.mp4')
-    clips = analyse_instrument(video)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--source', required=True, 
+                        help='The input video')
+    parser.add_argument('-o', '--out', default='out',
+                       help='The output file name')
+    args = parser.parse_args()
+    video = edit.VideoFileClip(args.source)
+    clips = analyse_instrument(video, args.out)
 
 
 if __name__ == "__main__":

@@ -69,25 +69,9 @@ def main():
     else:
         # load the clips for the tones that each instrument plays
         instruments = midiparse.get_instruments(pattern)
-        for instrument_name in instruments:
-            instrument_clips[instrument_name] = {}
-            for note_number in instruments[instrument_name]:
-                note_str = midiparse.note_number_to_note_string(note_number)
-                file_name = ""
-                if args.one:
-                    file_name = os.path.join(source_dir, note_str + ".mp4")
-                else:
-                    file_name = os.path.join(source_dir, instrument_name,
-                                             note_str + ".mp4")
-                if not os.path.isfile(file_name):
-                    error("The required file \"{}\" couldn't be found"
-                          .format(file_name))
 
-                instrument_clips[instrument_name][note_number] = \
-                    edit.VideoFileClip(file_name)
-
-        final_clip = videocomposing.compose(instrument_clips, pattern,
-                                           1920, 1080)
+        final_clip = videocomposing.compose(instruments, pattern,
+                                           1920, 1080, source_dir)
         final_clip.write_videofile('output.mp4')
 
     sys.exit(0)
