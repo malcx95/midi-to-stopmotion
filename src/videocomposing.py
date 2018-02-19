@@ -33,6 +33,8 @@ def compose(instruments, midipattern, width, height, source_dir):
             written_clips.append((len(track), file_name))
             _delete_clips(instrument_clips)
             del instrument_clips
+        except IOError:
+            raise
         except Exception as e:
             print "Couldn't process instrument {}: {}, continuing...".format(
                 name, e.message)
@@ -119,7 +121,7 @@ def _process_track(clips, midi_track, pulse_length, width, height):
     Returns a CompositeVideoClip.
     """
     parsed_clips = []
-    parsed_notes, parsed_events, max_simultaneous_notes = \
+    parsed_notes, parsed_events, max_simultaneous_notes, max_velocity = \
             midiparse.analyse_track(midi_track)
     for note in parsed_notes:
         note_number = note.note_number
@@ -129,8 +131,11 @@ def _process_track(clips, midi_track, pulse_length, width, height):
         x, y, w, h = _partition(width, height, 
                                 num_sim_notes, note.video_position)
         #if note.duration*pulse_length*2 < audioanalysis.STANDARD_OFFSET:
+        volume = float(note.velocity) / float(max_velocity)
+
         clip = clip.subclip(audioanalysis.STANDARD_OFFSET)
         clip = clip.set_start(note.start*pulse_length)
+        clip = clip.volumex(volume)
         d = clip.duration
         clip = clip.set_duration(min(note.duration*pulse_length*2, d))
         clip = clip.set_position((x, y))

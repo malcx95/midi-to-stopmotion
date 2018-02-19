@@ -21,13 +21,14 @@ class TrackEvent:
 
 class Note:
 
-    def __init__(self, note_number, start, end):
+    def __init__(self, note_number, start, end, velocity):
         self.note_number = note_number
         self.octave = note_number_to_octave(note_number)
         self.tone = note_number_to_tone(note_number, self.octave)
         self.start = start
         self.end = end
         self.duration = end - start
+        self.velocity = velocity
         self.video_position = None
 
     def __repr__(self):
@@ -60,6 +61,7 @@ def analyse_track(miditrack):
     parsed_notes = []
     parsed_events = {}
     max_simultaneous_notes = 0
+    max_velocity = 0
     for event in miditrack:
         if _is_note_start(event):
             curr_events.append(event)
@@ -68,7 +70,9 @@ def analyse_track(miditrack):
                 ev = curr_events[i]
                 p = _event_pitch(ev)
                 if _event_pitch(ev) == _event_pitch(event):
-                    note = Note(p, ev.tick, event.tick)
+                    vel = ev.get_velocity()
+                    note = Note(p, ev.tick, event.tick, vel)
+                    max_velocity = max(vel, max_velocity)
                     parsed_notes.append(note)
                     curr_events.remove(ev)
 
@@ -77,7 +81,7 @@ def analyse_track(miditrack):
                     max_simultaneous_notes = max(max_simultaneous_notes, 
                                                 curr_simultaneous_notes)
                     break
-    return parsed_notes, parsed_events, max_simultaneous_notes
+    return parsed_notes, parsed_events, max_simultaneous_notes, max_velocity
 
 
 def _add_note_to_parsed_events(parsed_events, note):
@@ -91,12 +95,14 @@ def _add_note_to_parsed_events(parsed_events, note):
         parsed_events[start].started_notes.append(note)
         parsed_events[start].num_simultaneous_notes += 1
         num_simultaneous_notes = parsed_events[start].num_simultaneous_notes
-    note.video_position = num_simultaneous_notes - 1
     if end not in parsed_events:
-        parsed_events[end] = TrackEvent(end, 0)
+        parsed_events[end] = TrackEvent(end, 1)
         parsed_events[end].ended_notes.append(note)
     else:
         parsed_events[end].ended_notes.append(note)
+        parsed_events[end].num_simultaneous_notes += 1
+        num_simultaneous_notes = parsed_events[end].num_simultaneous_notes
+    note.video_position = num_simultaneous_notes - 1
     return num_simultaneous_notes
 
 
@@ -124,11 +130,7 @@ def get_tempo(midipattern):
 
 
 def get_resolution(midipattern):
-    for p in midipattern[0]:
-        if isinstance(p, midi.TimeSignatureEvent):
-            # FIXME find the actual resolution
-            return 256
-    return None
+    return midipattern.resolution
 
 
 def get_instruments(midipattern):
