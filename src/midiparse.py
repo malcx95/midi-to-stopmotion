@@ -7,11 +7,10 @@ DEFAULT_TEMPO = 500000
 
 class TrackEvent:
 
-    def __init__(self, time, num_simultaneous_notes):
+    def __init__(self, time, curr_notes):
         self.time = time
-        self.num_simultaneous_notes = num_simultaneous_notes
-        self.started_notes = []
-        self.ended_notes = []
+        self.num_simultaneous_notes = len(curr_notes)
+        self.curr_notes = curr_notes 
 
     def __repr__(self):
         return "{} simultaneous notes, {} started, {} ended\n".format(
@@ -76,34 +75,100 @@ def analyse_track(miditrack):
                     parsed_notes.append(note)
                     curr_events.remove(ev)
 
-                    curr_simultaneous_notes = \
-                        _add_note_to_parsed_events(parsed_events, note)
-                    max_simultaneous_notes = max(max_simultaneous_notes, 
-                                                curr_simultaneous_notes)
+                    # curr_simultaneous_notes = \
+                    #     _add_note_to_parsed_events(parsed_events, note)
+                    # max_simultaneous_notes = max(max_simultaneous_notes, 
+                    #                             curr_simultaneous_notes)
                     break
-    return parsed_notes, parsed_events, max_simultaneous_notes, max_velocity
+    events, max_sim_notes = _parse_events(parsed_notes)
+    return parsed_notes, events, max_sim_notes, max_velocity
 
 
-def _add_note_to_parsed_events(parsed_events, note):
-    start = note.start
-    end = note.end
-    num_simultaneous_notes = 1
-    if start not in parsed_events:
-        parsed_events[start] = TrackEvent(start, 1)
-        parsed_events[start].started_notes.append(note)
-    else:
-        parsed_events[start].started_notes.append(note)
-        parsed_events[start].num_simultaneous_notes += 1
-        num_simultaneous_notes = parsed_events[start].num_simultaneous_notes
-    if end not in parsed_events:
-        parsed_events[end] = TrackEvent(end, 1)
-        parsed_events[end].ended_notes.append(note)
-    else:
-        parsed_events[end].ended_notes.append(note)
-        parsed_events[end].num_simultaneous_notes += 1
-        num_simultaneous_notes = parsed_events[end].num_simultaneous_notes
-    note.video_position = num_simultaneous_notes - 1
-    return num_simultaneous_notes
+def _parse_events(parsed_notes):
+    """
+    Returns a dictionary where every time instance where something
+    happens is mapped to how many notes are playing then.
+    """
+    note_starts = {}
+    note_ends = {}
+
+    for note in parsed_notes:
+        start = note.start
+        if not start in note_starts:
+            note_starts[start] = []
+        note_starts[start].append(note)
+
+        end = note.end
+        if not end in note_ends:
+            note_ends[end] = []
+        note_ends[end].append(note)
+
+    event_times = sorted(note_starts.keys() + note_ends.keys())
+    total_events = {}
+    curr_sim_notes = 0
+    max_sim_notes = 0
+    curr_notes = []
+
+    for time in event_times:
+        if time in note_starts:
+            curr_notes = _list_union(curr_notes, note_starts[time])
+        if time in note_ends:
+            curr_notes = _list_subtract(curr_notes, note_ends[time])
+        max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
+        total_events[time] = TrackEvent(time, curr_notes)
+
+    # TODO you're not done yet:
+    # 1. Go through each parsed note again.
+    # 2. Use the list of sorted event_times to find ALL events between
+    #    the note's start and end.
+    # 3. Store num_sim_notes in this note as the highest of the events
+    #    you collected.
+    # 4. Add all curr_notes from these events into a list of neighboring
+    #    notes in the note object.(maybe?)
+    # 5. Unless already done so, assign video positions to all these notes.
+    # 6. We no longer need to return the events.
+    return total_events, max_sim_notes
+
+
+def _list_subtract(l1, l2):
+    """
+    Returns a list with all elements in l1 that
+    aren't in l2.
+    """
+    return list(filter(lambda x: x not in l2, l1))
+
+
+def _list_union(l1, l2):
+    """
+    Returns the union of l1 and l2
+    """
+    res = []
+    for x in l1 + l2:
+        if x not in res:
+            res.append(x)
+    return res
+
+
+# def _add_note_to_parsed_events(parsed_events, note):
+#     start = note.start
+#     end = note.end
+#     num_simultaneous_notes = 1
+#     if start not in parsed_events:
+#         parsed_events[start] = TrackEvent(start, 1)
+#         parsed_events[start].started_notes.append(note)
+#     else:
+#         parsed_events[start].started_notes.append(note)
+#         parsed_events[start].num_simultaneous_notes += 1
+#         num_simultaneous_notes = parsed_events[start].num_simultaneous_notes
+#     if end not in parsed_events:
+#         parsed_events[end] = TrackEvent(end, 1)
+#         parsed_events[end].ended_notes.append(note)
+#     else:
+#         parsed_events[end].ended_notes.append(note)
+#         parsed_events[end].num_simultaneous_notes += 1
+#         num_simultaneous_notes = parsed_events[end].num_simultaneous_notes
+#     note.video_position = num_simultaneous_notes - 1
+#     return num_simultaneous_notes
 
 
 def note_number_to_octave(note_number):

@@ -13,6 +13,10 @@ def compose(instruments, midipattern, width, height, source_dir):
     pulse_length = 60/(tempo*resolution)
     # pdb.set_trace()
     written_clips = []
+
+    # TODO use
+    tracks = _analyse_all_tracks(midipattern)
+
     for i, track in enumerate(midipattern[1:]):
         print "Composing track " + str(i) + "..."
         name = midiparse.get_instrument_name(track)
@@ -27,18 +31,18 @@ def compose(instruments, midipattern, width, height, source_dir):
                                                   instruments[name],
                                                   source_dir)
         try:
-            track_clip = _process_track(instrument_clips,
-                                          track, pulse_length, width, height)
+            track_clip = _process_track(instrument_clips, track,
+                                        pulse_length, width, height)
             track_clip.write_videofile(file_name)
             written_clips.append((len(track), file_name))
             _delete_clips(instrument_clips)
             del instrument_clips
         except IOError:
             raise
-        except Exception as e:
-            print "Couldn't process instrument {}: {}, continuing...".format(
-                name, e.message)
-            continue
+        # except Exception as e:
+        #     print "Couldn't process instrument {}: {}, continuing...".format(
+        #         name, e.message)
+        #     continue
 
     written_clips.sort(key=lambda s: s[0], reverse=True)
 
@@ -49,6 +53,13 @@ def compose(instruments, midipattern, width, height, source_dir):
         final_clips.append(
             fx.resize(clip, newsize=(w, h)).set_position((x, y)))
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
+
+
+def _analyse_all_tracks(midipattern):
+    return {midiparse.get_instrument_name(miditrack): 
+            midiparse.analyse_track(miditrack)
+            for miditrack in midipattern[1:]}
+    
 
 
 def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
@@ -113,8 +124,6 @@ def _partition(width, height, num_sim_notes, pos):
         return (pos // 3)*w, (pos % 3)*h, w, h
 
 
-
-
 def _process_track(clips, midi_track, pulse_length, width, height):
     """
     Composes one midi track into a stop motion video clip.
@@ -128,6 +137,10 @@ def _process_track(clips, midi_track, pulse_length, width, height):
         clip = clips[note_number].copy()
         curr_event = parsed_events[note.start]
         num_sim_notes = curr_event.num_simultaneous_notes
+
+        # TODO we shouldn't need parsed events
+        # Read todo in midiparse
+
         x, y, w, h = _partition(width, height, 
                                 num_sim_notes, note.video_position)
         #if note.duration*pulse_length*2 < audioanalysis.STANDARD_OFFSET:
