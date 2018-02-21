@@ -29,6 +29,7 @@ class Note:
         self.duration = end - start
         self.velocity = velocity
         self.video_position = None
+        self.neighboring_notes = []
 
     def __repr__(self):
         return "{}{} from {} to {} (duration: {})".format(self.tone, self.octave, 
@@ -117,6 +118,17 @@ def _parse_events(parsed_notes):
         max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
         total_events[time] = TrackEvent(time, curr_notes)
 
+    for note in parsed_notes:
+        start = note.start
+        end = note.end
+        related_events = _find_events_between_inclusive(start, end,
+                                                        sorted_times,
+                                                        total_events)
+        # TODO go through these events and add them to this
+        # note's neighboring notes. Redefine num_sim_notes
+        # to simply return the length of the neighboring notes list
+        # After this, go through the notes again to assign video positions.
+
     # TODO you're not done yet:
     # 1. Go through each parsed note again.
     # 2. Use the list of sorted event_times to find ALL events between
@@ -128,6 +140,30 @@ def _parse_events(parsed_notes):
     # 5. Unless already done so, assign video positions to all these notes.
     # 6. We no longer need to return the events.
     return total_events, max_sim_notes
+
+
+def _find_events_between_inclusive(start, end, sorted_times, total_events):
+    first_index = _find_index_sorted(start, sorted_times)
+    last_index = _find_index_sorted(end, sorted_times)
+    times = sorted_times[first_index:last_index+1]
+    return [total_events[t] for t in times]
+
+
+def _find_index_sorted(el, sorted_list):
+    """
+    Performs binary search to find the index of the
+    given element in a sorted list.
+    """
+    first = 0
+    last = len(sorted_list)
+    while True:
+        i = (first + last)//2
+        if sorted_list[i] == el:
+            return i
+        elif sorted_list[i] > el:
+            last = i - 1
+        else:
+            first = i + 1
 
 
 def _list_subtract(l1, l2):
