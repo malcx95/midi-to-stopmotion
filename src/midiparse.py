@@ -30,6 +30,9 @@ class Note:
         self.velocity = velocity
         self.video_position = None
         self.neighboring_notes = []
+    
+    def get_num_sim_notes(self):
+        return len(self.neighboring_notes)
 
     def __repr__(self):
         return "{}{} from {} to {} (duration: {})".format(self.tone, self.octave, 
@@ -81,18 +84,21 @@ def analyse_track(miditrack):
                     # max_simultaneous_notes = max(max_simultaneous_notes, 
                     #                             curr_simultaneous_notes)
                     break
-    events, max_sim_notes = _parse_events(parsed_notes)
-    return parsed_notes, events, max_sim_notes, max_velocity
+    _parse_events(parsed_notes)
+    return parsed_notes, max_velocity
 
 
 def _parse_events(parsed_notes):
     """
-    Returns a dictionary where every time instance where something
-    happens is mapped to how many notes are playing then.
+    Assigns the neighboring_notes lists to each note
+    as well as their video positions.
     """
     note_starts = {}
     note_ends = {}
 
+    # create dictionaries containing information on when
+    # the notes start and end
+    pdb.set_trace()
     for note in parsed_notes:
         start = note.start
         if not start in note_starts:
@@ -104,12 +110,16 @@ def _parse_events(parsed_notes):
             note_ends[end] = []
         note_ends[end].append(note)
 
+    pdb.set_trace()
     event_times = sorted(note_starts.keys() + note_ends.keys())
     total_events = {}
     curr_sim_notes = 0
     max_sim_notes = 0
     curr_notes = []
 
+    # create track events containing which
+    # notes are playing at a particular instance
+    pdb.set_trace()
     for time in event_times:
         if time in note_starts:
             curr_notes = _list_union(curr_notes, note_starts[time])
@@ -118,18 +128,31 @@ def _parse_events(parsed_notes):
         max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
         total_events[time] = TrackEvent(time, curr_notes)
 
+    # for each of the notes in the list of parsed notes, put
+    # fill their neighboring notes lists.
+    pdb.set_trace()
     for note in parsed_notes:
         start = note.start
         end = note.end
+        this_note_number = note.note_number
         related_events = _find_events_between_inclusive(start, end,
-                                                        sorted_times,
+                                                        event_times,
                                                         total_events)
-        # TODO go through these events and add them to this
-        # note's neighboring notes. Redefine num_sim_notes
-        # to simply return the length of the neighboring notes list
-        # After this, go through the notes again to assign video positions.
+        for event in related_events:
+            note.neighboring_notes += list(
+                # don't add the notes that have the same note number
+                filter(lambda n: n.note_number != this_note_number, 
+                      event.curr_notes)
+            )
+    
+    # finally, assign the video positions
+    pdb.set_trace()
+    for note in parsed_notes:
+        if note.video_position is None:
+            note.video_position = 0
+            for p, neighbor in enumerate(note.neighboring_notes):
+                neighbor.video_position = p + 1
 
-    # TODO you're not done yet:
     # 1. Go through each parsed note again.
     # 2. Use the list of sorted event_times to find ALL events between
     #    the note's start and end.
@@ -139,7 +162,6 @@ def _parse_events(parsed_notes):
     #    notes in the note object.(maybe?)
     # 5. Unless already done so, assign video positions to all these notes.
     # 6. We no longer need to return the events.
-    return total_events, max_sim_notes
 
 
 def _find_events_between_inclusive(start, end, sorted_times, total_events):

@@ -15,7 +15,7 @@ def compose(instruments, midipattern, width, height, source_dir):
     written_clips = []
 
     # TODO use
-    tracks = _analyse_all_tracks(midipattern)
+    # tracks = _analyse_all_tracks(midipattern)
 
     for i, track in enumerate(midipattern[1:]):
         print "Composing track " + str(i) + "..."
@@ -130,16 +130,12 @@ def _process_track(clips, midi_track, pulse_length, width, height):
     Returns a CompositeVideoClip.
     """
     parsed_clips = []
-    parsed_notes, parsed_events, max_simultaneous_notes, max_velocity = \
+    parsed_notes, max_velocity = \
             midiparse.analyse_track(midi_track)
     for note in parsed_notes:
         note_number = note.note_number
         clip = clips[note_number].copy()
-        curr_event = parsed_events[note.start]
-        num_sim_notes = curr_event.num_simultaneous_notes
-
-        # TODO we shouldn't need parsed events
-        # Read todo in midiparse
+        num_sim_notes = note.get_num_sim_notes()
 
         x, y, w, h = _partition(width, height, 
                                 num_sim_notes, note.video_position)
