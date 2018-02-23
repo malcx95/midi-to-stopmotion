@@ -77,11 +77,6 @@ def analyse_track(miditrack):
                     max_velocity = max(vel, max_velocity)
                     parsed_notes.append(note)
                     curr_events.remove(ev)
-
-                    # curr_simultaneous_notes = \
-                    #     _add_note_to_parsed_events(parsed_events, note)
-                    # max_simultaneous_notes = max(max_simultaneous_notes, 
-                    #                             curr_simultaneous_notes)
                     break
     _parse_events(parsed_notes)
     return parsed_notes, max_velocity

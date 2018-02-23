@@ -5,6 +5,13 @@ import midiparse
 import random
 import os
 import audioanalysis
+import math
+
+
+# TODO when composing all tracks, save an array where
+# each index tells whether there is something playing
+# at this timestamp. That way you can tell which clips
+# should be shown and how to partition them
 
 
 def compose(instruments, midipattern, width, height, source_dir):
@@ -27,22 +34,17 @@ def compose(instruments, midipattern, width, height, source_dir):
         if name is None:
             # FIXME this is ugly
             name = "Untitled Instrument 1"
-        instrument_clips = _load_instrument_clips(name, 
-                                                  instruments[name],
-                                                  source_dir)
         try:
-            track_clip = _process_track(instrument_clips, track,
-                                        pulse_length, width, height)
-            track_clip.write_videofile(file_name)
+            _process_track(instruments, name, source_dir, track, pulse_length,
+                           width, height, file_name, 
+                           len(midipattern[1:]))
             written_clips.append((len(track), file_name))
-            _delete_clips(instrument_clips)
-            del instrument_clips
         except IOError:
             raise
-        # except Exception as e:
-        #     print "Couldn't process instrument {}: {}, continuing...".format(
-        #         name, e.message)
-        #     continue
+        except Exception as e:
+            print "Couldn't process instrument {}: {}, continuing...".format(
+                name, e.message)
+            continue
 
     written_clips.sort(key=lambda s: s[0], reverse=True)
 
@@ -51,7 +53,10 @@ def compose(instruments, midipattern, width, height, source_dir):
         clip = edit.VideoFileClip(file_name)
         x, y, w, h = _partition(width, height, len(written_clips), i)
         final_clips.append(
-            fx.resize(clip, newsize=(w, h)).set_position((x, y)))
+            fx.resize(clip, newsize=(w, h))
+            .set_position((x, y))
+            .volumex(0.5)
+        )
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
 
 
@@ -63,6 +68,7 @@ def _analyse_all_tracks(midipattern):
 
 def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
     res = {}
+    min_vol = float('inf')
     for note_number in instrument_notes:
         note_str = midiparse.note_number_to_note_string(note_number)
         print "Loading " + note_str
@@ -76,9 +82,11 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
         clip = edit.VideoFileClip(file_name)
         tmp_file = 'STUPIDMOVIEPY' + note_str + '.mp4'
         clip.write_videofile(tmp_file)
-        res[note_number] = (clip, audioanalysis.find_offset(clip))
+        offset, max_vol = audioanalysis.find_offset_and_max_vol(clip)
+        res[note_number] = (clip, offset, max_vol)
         os.remove(tmp_file)
-    return res
+        min_vol = min(min_vol, max_vol)
+    return res, min_vol
 
 
 def _delete_clips(instrument_clips):
@@ -129,32 +137,42 @@ def _partition(width, height, num_sim_notes, pos):
         return (pos // 3)*w, (pos % 3)*h, w, h
 
 
-def _process_track(clips, midi_track, pulse_length, width, height):
+def _process_track(instruments, instrument_name, source_dir, 
+                   midi_track, pulse_length,
+                   width, height, file_name, num_sim_tracks):
     """
     Composes one midi track into a stop motion video clip.
-    Returns a CompositeVideoClip.
+    Writes a file of this with the given file name.
     """
+    clips, min_vol = _load_instrument_clips(instrument_name, 
+                                            instruments[instrument_name],
+                                            source_dir)
     parsed_clips = []
     parsed_notes, max_velocity = \
             midiparse.analyse_track(midi_track)
+    scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
     for note in parsed_notes:
         note_number = note.note_number
-        c, offset = clips[note_number]
+        c, offset, max_vol = clips[note_number]
         clip = c.copy()
         num_sim_notes = note.get_num_sim_notes()
 
         x, y, w, h = _partition(width, height, 
                                 num_sim_notes, note.video_position)
-        #if note.duration*pulse_length*2 < audioanalysis.STANDARD_OFFSET:
-        volume = float(note.velocity) / float(max_velocity)
+
+        volume = (float(note.velocity) / float(max_velocity))*(min_vol/max_vol)
 
         clip = clip.subclip(offset)
-        clip = clip.set_start(note.start*pulse_length + offset)
+        clip = clip.set_start(note.start*pulse_length + 
+                              offset)
         clip = clip.volumex(volume)
         d = clip.duration
         clip = clip.set_duration(min(note.duration*pulse_length, d))
         clip = clip.set_position((x, y))
-        clip = fx.resize(clip, newsize=(w, h))
+        clip = fx.resize(clip, newsize=(w//scale_factor, h//scale_factor))
         parsed_clips.append(clip)
-    return edit.CompositeVideoClip(size=(width, height), clips=parsed_clips)
+    track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
+                                               height//scale_factor), 
+                                         clips=parsed_clips)
+    track_clip.write_videofile(file_name)
 

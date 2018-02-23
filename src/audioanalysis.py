@@ -19,7 +19,7 @@ STANDARD_OFFSET = 0.1
 
 SAMPLE_FREQUENCY = 44100
 
-AUDIO_START_THRESHOLD = 0.9
+AUDIO_START_THRESHOLD = 0.7
 
 
 def analyse_instrument(video, output_name):
@@ -39,20 +39,22 @@ def _extract_audio(video):
     # return signal.decimate((a[:, 0] + a[:, 1])*0.5, DOWNSAMPLE_FACTOR)
 
 
-def find_offset(clip):
+def find_offset_and_max_vol(clip):
     """
     Returns the amount of time in seconds before the note starts.
     """
     audio = _extract_audio(clip)
     
     clip_abs = np.abs(audio)
-    threshold = np.max(clip_abs)*AUDIO_START_THRESHOLD
+    max_vol = np.max(clip_abs)
+    threshold = max_vol*AUDIO_START_THRESHOLD
     tot_duration = clip.duration
     i = 0
     while i < len(clip_abs):
         if clip_abs[i] >= threshold:
-            return float(i)*tot_duration/float(len(clip_abs))
+            return float(i)*tot_duration/float(len(clip_abs)), max_vol
         i += 1
+    # return float(np.argmax(clip_abs))*tot_duration/float(len(clip_abs)), max_vol
 
     raise Exception("This should never happen")
     

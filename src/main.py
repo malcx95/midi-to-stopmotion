@@ -71,7 +71,7 @@ def main():
         instruments = midiparse.get_instruments(pattern)
 
         final_clip = videocomposing.compose(instruments, pattern,
-                                           640, 360, source_dir)
+                                           1280, 720, source_dir)
         final_clip.write_videofile('output.mp4')
 
     sys.exit(0)
