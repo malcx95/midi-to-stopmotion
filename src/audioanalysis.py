@@ -19,6 +19,8 @@ STANDARD_OFFSET = 0.1
 
 SAMPLE_FREQUENCY = 44100
 
+AUDIO_START_THRESHOLD = 0.9
+
 
 def analyse_instrument(video, output_name):
     clips = _split_clip(video)
@@ -26,29 +28,33 @@ def analyse_instrument(video, output_name):
         clip.write_videofile(output_name.split('.')[0] + str(i) + '.mp4')
 
 
-def identity_frequencies(clips):
-    for _, audio in clips:
-        audio_ft = fft(audio)
-        plt.figure(1)
-        xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
-        dominant_freq = np.argmax(np.abs(audio_ft))
-        freqs = fftfreq(len(audio_ft), d=1.0/SAMPLE_FREQUENCY)
-        dominant_freq_hz = freqs[dominant_freq]
-        print dominant_freq
-        print dominant_freq_hz
-        print len(audio_ft)
-        plt.plot(np.abs(audio_ft))
-        plt.show()
-
 def _remove_tmp_audio(file_name):
     os.remove(file_name)
 
 
 def _extract_audio(video):
     audio = video.audio
-    a = audio.to_soundarray(fps=SAMPLE_FREQUENCY, buffersize=25000)
+    a = audio.to_soundarray()#fps=SAMPLE_FREQUENCY)
     return (a[:, 0] + a[:, 1])*0.5
     # return signal.decimate((a[:, 0] + a[:, 1])*0.5, DOWNSAMPLE_FACTOR)
+
+
+def find_offset(clip):
+    """
+    Returns the amount of time in seconds before the note starts.
+    """
+    audio = _extract_audio(clip)
+    
+    clip_abs = np.abs(audio)
+    threshold = np.max(clip_abs)*AUDIO_START_THRESHOLD
+    tot_duration = clip.duration
+    i = 0
+    while i < len(clip_abs):
+        if clip_abs[i] >= threshold:
+            return float(i)*tot_duration/float(len(clip_abs))
+        i += 1
+
+    raise Exception("This should never happen")
     
 
 def _split_clip(video):

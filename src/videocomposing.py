@@ -59,13 +59,13 @@ def _analyse_all_tracks(midipattern):
     return {midiparse.get_instrument_name(miditrack): 
             midiparse.analyse_track(miditrack)
             for miditrack in midipattern[1:]}
-    
 
 
 def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
     res = {}
     for note_number in instrument_notes:
         note_str = midiparse.note_number_to_note_string(note_number)
+        print "Loading " + note_str
         file_name = ""
         file_name = os.path.join(source_dir, instrument_name,
                                      note_str + ".mp4")
@@ -73,8 +73,13 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
             error("The required file \"{}\" couldn't be found"
                   .format(file_name))
 
-        res[note_number] = edit.VideoFileClip(file_name)
+        clip = edit.VideoFileClip(file_name)
+        tmp_file = 'STUPIDMOVIEPY' + note_str + '.mp4'
+        clip.write_videofile(tmp_file)
+        res[note_number] = (clip, audioanalysis.find_offset(clip))
+        os.remove(tmp_file)
     return res
+
 
 def _delete_clips(instrument_clips):
     keys = instrument_clips.keys()
@@ -134,7 +139,8 @@ def _process_track(clips, midi_track, pulse_length, width, height):
             midiparse.analyse_track(midi_track)
     for note in parsed_notes:
         note_number = note.note_number
-        clip = clips[note_number].copy()
+        c, offset = clips[note_number]
+        clip = c.copy()
         num_sim_notes = note.get_num_sim_notes()
 
         x, y, w, h = _partition(width, height, 
@@ -142,11 +148,11 @@ def _process_track(clips, midi_track, pulse_length, width, height):
         #if note.duration*pulse_length*2 < audioanalysis.STANDARD_OFFSET:
         volume = float(note.velocity) / float(max_velocity)
 
-        clip = clip.subclip(audioanalysis.STANDARD_OFFSET)
-        clip = clip.set_start(note.start*pulse_length)
+        clip = clip.subclip(offset)
+        clip = clip.set_start(note.start*pulse_length + offset)
         clip = clip.volumex(volume)
         d = clip.duration
-        clip = clip.set_duration(min(note.duration*pulse_length*2, d))
+        clip = clip.set_duration(min(note.duration*pulse_length, d))
         clip = clip.set_position((x, y))
         clip = fx.resize(clip, newsize=(w, h))
         parsed_clips.append(clip)

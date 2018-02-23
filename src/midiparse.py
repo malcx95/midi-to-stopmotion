@@ -13,9 +13,8 @@ class TrackEvent:
         self.curr_notes = curr_notes 
 
     def __repr__(self):
-        return "{} simultaneous notes, {} started, {} ended\n".format(
-            self.num_simultaneous_notes, 
-            len(self.started_notes), len(self.ended_notes))
+        return "{} simultaneous notes: {}\n".format(
+            self.num_simultaneous_notes, self.curr_notes)
 
 
 class Note:
@@ -32,7 +31,7 @@ class Note:
         self.neighboring_notes = []
     
     def get_num_sim_notes(self):
-        return len(self.neighboring_notes)
+        return len(self.neighboring_notes) + 1
 
     def __repr__(self):
         return "{}{} from {} to {} (duration: {})".format(self.tone, self.octave, 
@@ -98,7 +97,6 @@ def _parse_events(parsed_notes):
 
     # create dictionaries containing information on when
     # the notes start and end
-    pdb.set_trace()
     for note in parsed_notes:
         start = note.start
         if not start in note_starts:
@@ -110,7 +108,6 @@ def _parse_events(parsed_notes):
             note_ends[end] = []
         note_ends[end].append(note)
 
-    pdb.set_trace()
     event_times = sorted(note_starts.keys() + note_ends.keys())
     total_events = {}
     curr_sim_notes = 0
@@ -119,7 +116,6 @@ def _parse_events(parsed_notes):
 
     # create track events containing which
     # notes are playing at a particular instance
-    pdb.set_trace()
     for time in event_times:
         if time in note_starts:
             curr_notes = _list_union(curr_notes, note_starts[time])
@@ -130,7 +126,6 @@ def _parse_events(parsed_notes):
 
     # for each of the notes in the list of parsed notes, put
     # fill their neighboring notes lists.
-    pdb.set_trace()
     for note in parsed_notes:
         start = note.start
         end = note.end
@@ -146,7 +141,6 @@ def _parse_events(parsed_notes):
             )
     
     # finally, assign the video positions
-    pdb.set_trace()
     for note in parsed_notes:
         if note.video_position is None:
             note.video_position = 0
