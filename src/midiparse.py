@@ -129,18 +129,16 @@ def _parse_events(parsed_notes):
                                                         event_times,
                                                         total_events)
         for event in related_events:
-            note.neighboring_notes += list(
-                # don't add the notes that have the same note number
-                filter(lambda n: n.note_number != this_note_number, 
-                      event.curr_notes)
-            )
+            for n in event.curr_notes:
+                if n.note_number != this_note_number:
+                    note.neighboring_notes.append(n)
     
     # finally, assign the video positions
     for note in parsed_notes:
         if note.video_position is None:
-            note.video_position = 0
-            for p, neighbor in enumerate(note.neighboring_notes):
-                neighbor.video_position = p + 1
+            note_nums = sorted([n.note_number for n in 
+                                note.neighboring_notes] + [note.note_number])
+            note.video_position = note_nums.index(note.note_number)
 
     # 1. Go through each parsed note again.
     # 2. Use the list of sorted event_times to find ALL events between

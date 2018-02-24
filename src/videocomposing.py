@@ -111,17 +111,17 @@ def _partition(width, height, num_sim_notes, pos):
     if num_sim_notes <= 4:
         if pos < 4:
             # put it in one of 4 spots
-            x = (pos // 2)*w
-            y = (pos % 2)*h
+            x = (pos % 2)*w
+            y = (pos // 2)*h
 
-            if num_sim_notes < 2:
-                # if there are only two notes, vertically center
-                # the clips 
-                y += h
-            elif num_sim_notes == 3 and pos == 2:
-                # if there are a total of 3 clips, horizontally
-                # center the last clip
-                x += w
+            # if num_sim_notes < 2:
+            #     # if there are only two notes, vertically center
+            #     # the clips 
+            #     y += h
+            # elif num_sim_notes == 3 and pos == 2:
+            #     # if there are a total of 3 clips, horizontally
+            #     # center the last clip
+            #     x += w
             return x, y, w, h
         else:
             # if there are more than 4, place it randomly on top of the others
@@ -168,7 +168,7 @@ def _process_track(instruments, instrument_name, source_dir,
         clip = clip.volumex(volume)
         d = clip.duration
         clip = clip.set_duration(min(note.duration*pulse_length, d))
-        clip = clip.set_position((x, y))
+        clip = clip.set_position((x//scale_factor, y//scale_factor))
         clip = fx.resize(clip, newsize=(w//scale_factor, h//scale_factor))
         parsed_clips.append(clip)
     track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
