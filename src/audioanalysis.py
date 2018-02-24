@@ -47,12 +47,14 @@ def find_offset_and_max_vol(clip):
     
     clip_abs = np.abs(audio)
     max_vol = np.max(clip_abs)
-    threshold = max_vol*AUDIO_START_THRESHOLD
+    kernel = np.ones((KERNEL_SIZE,))/KERNEL_SIZE
+    filtered = signal.convolve(clip_abs, kernel, mode='same')
+    threshold = np.max(filtered)*AUDIO_START_THRESHOLD
     tot_duration = clip.duration
     i = 0
-    while i < len(clip_abs):
-        if clip_abs[i] >= threshold:
-            return float(i)*tot_duration/float(len(clip_abs)), max_vol
+    while i < len(filtered):
+        if filtered[i] >= threshold:
+            return float(i)*tot_duration/float(len(filtered)), max_vol
         i += 1
     # return float(np.argmax(clip_abs))*tot_duration/float(len(clip_abs)), max_vol
 
