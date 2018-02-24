@@ -6,6 +6,7 @@ import random
 import os
 import audioanalysis
 import math
+import json
 
 
 # TODO when composing all tracks, save an array where
@@ -14,7 +15,9 @@ import math
 # should be shown and how to partition them
 
 
-def compose(instruments, midipattern, width, height, source_dir):
+def compose(instruments, midipattern, width, 
+            height, source_dir, volume_file_name):
+    volumes = _try_load_volume_file(volume_file_name)
     tempo = midiparse.get_tempo(midipattern)
     resolution = midiparse.get_resolution(midipattern)
     pulse_length = 60/(tempo*resolution)
@@ -38,7 +41,7 @@ def compose(instruments, midipattern, width, height, source_dir):
             _process_track(instruments, name, source_dir, track, pulse_length,
                            width, height, file_name, 
                            len(midipattern[1:]))
-            written_clips.append((len(track), file_name))
+            written_clips.append((len(track), file_name, name))
         except IOError:
             raise
         except Exception as e:
@@ -49,15 +52,25 @@ def compose(instruments, midipattern, width, height, source_dir):
     written_clips.sort(key=lambda s: s[0], reverse=True)
 
     final_clips = []
-    for i, (_, file_name) in enumerate(written_clips):
+    for i, (_, file_name, instrument_name) in enumerate(written_clips):
+        vol = 0.5
+        if volumes is not None:
+            vol = volumes.get(instrument_name, 0.5)
         clip = edit.VideoFileClip(file_name)
         x, y, w, h = _partition(width, height, len(written_clips), i)
         final_clips.append(
             fx.resize(clip, newsize=(w, h))
             .set_position((x, y))
-            .volumex(0.5)
+            .volumex(vol)
         )
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
+
+
+def _try_load_volume_file(volume_file_name):
+    if volume_file_name is None:
+        return None
+    with open(volume_file_name) as f:
+        return json.loads(f.read())
 
 
 def _analyse_all_tracks(midipattern):

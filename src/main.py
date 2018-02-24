@@ -48,12 +48,18 @@ def main():
     parser.add_argument('-i', '--instruments', help='Get the instruments', action='store_true')
     parser.add_argument('-d', '--one',
                        help='Use the only provided instrument for all instruments', action='store_true')
+    parser.add_argument('-v', '--volume', type=str,
+                        help="Path to track volume config")
 
     args = parser.parse_args()
 
     midifile = args.midifile
     if not os.path.isfile(midifile):
         parser.error("MIDI file \"{}\" not found".format(midifile))
+
+    volume_file = args.volume
+    if volume_file is not None and (not os.path.isfile(volume_file)):
+        parser.error("Volume file \"{}\" not found".format(volume_file))
 
     source_dir = args.source
     if not args.instruments and not os.path.isdir(source_dir):
@@ -71,7 +77,7 @@ def main():
         instruments = midiparse.get_instruments(pattern)
 
         final_clip = videocomposing.compose(instruments, pattern,
-                                           1280, 720, source_dir)
+                                           1280, 720, source_dir, volume_file)
         final_clip.write_videofile('output.mp4')
 
     sys.exit(0)
