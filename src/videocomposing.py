@@ -8,6 +8,8 @@ import audioanalysis
 import math
 import json
 
+SUPPORTED_EXTENSIONS = ['mp4']
+
 
 # TODO when composing all tracks, save an array where
 # each index tells whether there is something playing
@@ -28,11 +30,11 @@ def compose(instruments, midipattern, width,
     # tracks = _analyse_all_tracks(midipattern)
 
     for i, track in enumerate(midipattern[1:]):
-        print "Composing track " + str(i) + "..."
         name = midiparse.get_instrument_name(track)
+        print "Composing track " + name + "..."
         file_name = name + '.mp4'
         if os.path.isfile(file_name):
-            written_clips.append((len(track), file_name))
+            written_clips.append((len(track), file_name, name))
             continue
         if name is None:
             # FIXME this is ugly
@@ -79,11 +81,67 @@ def _analyse_all_tracks(midipattern):
             for miditrack in midipattern[1:]}
 
 
+def _is_valid_tone_name(name):
+    name_split = name.split('.')
+    if len(name_split) != 2:
+        return False
+    tone, ext = name_split
+    if ext not in SUPPORTED_EXTENSIONS:
+        return False
+    if '#' in tone and len(tone) == 3:
+        return tone[:2] in midiparse.TONES and tone[-1].isdigit()
+    elif len(tone) == 2:
+        return tone[0] in midiparse.TONES and tone[-1].isdigit()
+
+
+def _get_available_tones(source_dir):
+    filenames = None
+    for _, _, names in os.walk(source_dir):
+        filenames = names
+        break
+    tones = [name.split('.')[0] for name in filenames
+             if _is_valid_tone_name(name)]
+    return tones
+
+
+def _get_closest_note(avail_tones_split, target_note_number):
+    target_octave = midiparse.note_number_to_octave(target_note_number)
+    target_tone = midiparse.note_number_to_tone(target_note_number,
+                                                target_octave)
+
+    res_octave = None
+    diff = float('inf')
+
+    for tone, octave in avail_tones_split:
+        if tone == target_tone and abs(octave - target_octave) < diff:
+            res_octave = octave
+            diff = abs(octave - target_octave)
+    if res_octave is None:
+        raise Exception('Required tone {} not found'.format(target_tone))
+
+    return target_tone + str(res_octave)
+            
+
+def _map_notes(avail_tones, instrument_notes):
+    res = {}
+    avail_tones_split = [(tone[:-1], int(tone[-1])) for tone in avail_tones]
+    for note in instrument_notes:
+        note_str = midiparse.note_number_to_note_string(note)
+        if note_str in avail_tones:
+            res[note] = note_str
+        else:
+            res[note] = _get_closest_note(avail_tones_split, note)
+    return res
+
+
 def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
     res = {}
     min_vol = float('inf')
-    for note_number in instrument_notes:
-        note_str = midiparse.note_number_to_note_string(note_number)
+    avail_tones = _get_available_tones(os.path.join(source_dir, 
+                                                    instrument_name))
+    mapped_notes = _map_notes(avail_tones, instrument_notes)
+    for note_number, note_str in mapped_notes.items():
+        # note_str = midiparse.note_number_to_note_string(note_number)
         print "Loading " + note_str
         file_name = ""
         file_name = os.path.join(source_dir, instrument_name,
@@ -176,8 +234,7 @@ def _process_track(instruments, instrument_name, source_dir,
         volume = (float(note.velocity) / float(max_velocity))*(min_vol/max_vol)
 
         clip = clip.subclip(offset)
-        clip = clip.set_start(note.start*pulse_length + 
-                              offset)
+        clip = clip.set_start(note.start*pulse_length)# + offset)
         clip = clip.volumex(volume)
         d = clip.duration
         clip = clip.set_duration(min(note.duration*pulse_length, d))
@@ -187,5 +244,5 @@ def _process_track(instruments, instrument_name, source_dir,
     track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
                                                height//scale_factor), 
                                          clips=parsed_clips)
-    track_clip.write_videofile(file_name)
+    track_clip.write_videofile(file_name, fps=24)
 

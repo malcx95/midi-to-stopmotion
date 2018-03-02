@@ -19,7 +19,7 @@ STANDARD_OFFSET = 0.1
 
 SAMPLE_FREQUENCY = 44100
 
-AUDIO_START_THRESHOLD = 0.4
+AUDIO_START_THRESHOLD = 0.7
 
 
 def analyse_instrument(video, output_name):
