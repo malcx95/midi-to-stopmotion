@@ -16,6 +16,23 @@ SUPPORTED_EXTENSIONS = ['mp4']
 # at this timestamp. That way you can tell which clips
 # should be shown and how to partition them
 
+# Better idea: when parsing the midifile, 
+# save all timestamps where there are no notes
+# playing or when all the notes that were playing have stopped,
+# so the track can be safely split at that point. Then,
+# using this information about all tracks, find the timestamps
+# where all tracks can be safely split. Then, for each of these timestamps,
+# partition the song between these timestamps and compose them individually.
+# Then when all tracks have been composed for one partition, compose these
+# into one clip using _partition. Then finally, join all partitions into one
+# clip.
+
+# You might need to define a minimum length of a partition though, since,
+# for instance, moments of complete silence would register as a whole lot
+# of partitions. A minimum length of a one or two measures should be fine.
+
+# Also multithread this, such that each thread processes a partition.
+
 
 def compose(instruments, midipattern, width, 
             height, source_dir, volume_file_name):
@@ -66,6 +83,29 @@ def compose(instruments, midipattern, width,
             .volumex(vol)
         )
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
+
+
+def find_common_split_points(split_point_lists, min_duration):
+    res = []
+    first_list = split_point_lists[0]
+
+    for time in first_list:
+        found = True
+        for l in split_point_lists[1:]:
+            if time not in l:
+                found = False
+                break
+        if found:
+            res.append(time)
+    
+    i = 0
+    while True:
+        if i + 1 >= len(res):
+            break
+        while res[i + 1] - res[i] < min_duration and i + 1 < len(res):
+            del res[i + 1]
+
+    return res
 
 
 def _try_load_volume_file(volume_file_name):

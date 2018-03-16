@@ -85,10 +85,13 @@ def analyse_track(miditrack):
 def _parse_events(parsed_notes):
     """
     Assigns the neighboring_notes lists to each note
-    as well as their video positions.
+    as well as their video positions. Also returns
+    a list of timestamps where it's safe to split
+    the song.
     """
     note_starts = {}
     note_ends = {}
+    split_points = []
 
     # create dictionaries containing information on when
     # the notes start and end
@@ -113,11 +116,19 @@ def _parse_events(parsed_notes):
     # notes are playing at a particular instance
     for time in event_times:
         if time in note_starts:
-            curr_notes = _list_union(curr_notes, note_starts[time])
+            started_notes = note_starts[time]
         if time in note_ends:
             curr_notes = _list_subtract(curr_notes, note_ends[time])
+
+        # safe to split here
+        if not curr_notes:
+            split_points.append(time)
+
+        curr_notes = _list_union(curr_notes, started_notes)
         max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
         total_events[time] = TrackEvent(time, curr_notes)
+
+    pdb.set_trace()
 
     # for each of the notes in the list of parsed notes, put
     # fill their neighboring notes lists.
@@ -139,16 +150,7 @@ def _parse_events(parsed_notes):
             note_nums = sorted([n.note_number for n in 
                                 note.neighboring_notes] + [note.note_number])
             note.video_position = note_nums.index(note.note_number)
-
-    # 1. Go through each parsed note again.
-    # 2. Use the list of sorted event_times to find ALL events between
-    #    the note's start and end.
-    # 3. Store num_sim_notes in this note as the highest of the events
-    #    you collected.
-    # 4. Add all curr_notes from these events into a list of neighboring
-    #    notes in the note object.(maybe?)
-    # 5. Unless already done so, assign video positions to all these notes.
-    # 6. We no longer need to return the events.
+    return split_points
 
 
 def _find_events_between_inclusive(start, end, sorted_times, total_events):
@@ -192,28 +194,6 @@ def _list_union(l1, l2):
         if x not in res:
             res.append(x)
     return res
-
-
-# def _add_note_to_parsed_events(parsed_events, note):
-#     start = note.start
-#     end = note.end
-#     num_simultaneous_notes = 1
-#     if start not in parsed_events:
-#         parsed_events[start] = TrackEvent(start, 1)
-#         parsed_events[start].started_notes.append(note)
-#     else:
-#         parsed_events[start].started_notes.append(note)
-#         parsed_events[start].num_simultaneous_notes += 1
-#         num_simultaneous_notes = parsed_events[start].num_simultaneous_notes
-#     if end not in parsed_events:
-#         parsed_events[end] = TrackEvent(end, 1)
-#         parsed_events[end].ended_notes.append(note)
-#     else:
-#         parsed_events[end].ended_notes.append(note)
-#         parsed_events[end].num_simultaneous_notes += 1
-#         num_simultaneous_notes = parsed_events[end].num_simultaneous_notes
-#     note.video_position = num_simultaneous_notes - 1
-#     return num_simultaneous_notes
 
 
 def note_number_to_octave(note_number):
