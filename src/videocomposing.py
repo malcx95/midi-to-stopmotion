@@ -39,7 +39,7 @@ def compose(instruments, midipattern, width,
     volumes = _try_load_volume_file(volume_file_name)
     tempo = midiparse.get_tempo(midipattern)
     resolution = midiparse.get_resolution(midipattern)
-    pulse_length = 60/(tempo*resolution)
+    pulse_length = 60.0/(tempo*resolution)
     # pdb.set_trace()
     written_clips = []
 
@@ -48,6 +48,9 @@ def compose(instruments, midipattern, width,
 
     for i, track in enumerate(midipattern[1:]):
         name = midiparse.get_instrument_name(track)
+        # TODO check if there are any notes instead
+        if name is None:
+            continue
         print "Composing track " + name + "..."
         file_name = name + '.mp4'
         if os.path.isfile(file_name):
@@ -61,6 +64,8 @@ def compose(instruments, midipattern, width,
                            width, height, file_name, 
                            len(midipattern[1:]))
             written_clips.append((len(track), file_name, name))
+        # except Exception:
+        #     raise
         except IOError:
             raise
         except Exception as e:

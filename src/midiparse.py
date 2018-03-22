@@ -3,7 +3,7 @@ import midi
 
 TONES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-DEFAULT_TEMPO = 500000
+DEFAULT_TEMPO = 96
 
 class TrackEvent:
 
@@ -28,10 +28,12 @@ class Note:
         self.duration = end - start
         self.velocity = velocity
         self.video_position = None
-        self.neighboring_notes = []
+        self.num_sim_notes = 0
+        # self.neighboring_notes = []
     
     def get_num_sim_notes(self):
-        return len(self.neighboring_notes) + 1
+        # return len(self.neighboring_notes) + 1
+        return self.num_sim_notes
 
     def __repr__(self):
         return "{}{} from {} to {} (duration: {})".format(self.tone, self.octave, 
@@ -116,41 +118,78 @@ def _parse_events(parsed_notes):
     # notes are playing at a particular instance
     for time in event_times:
         if time in note_starts:
-            started_notes = note_starts[time]
+            curr_notes = _list_union(curr_notes, note_starts[time])
+            # started_notes = note_starts[time]
         if time in note_ends:
             curr_notes = _list_subtract(curr_notes, note_ends[time])
 
         # safe to split here
-        if not curr_notes:
-            split_points.append(time)
+        # if not curr_notes or _note_lists_equal(curr_notes, note_starts[time]):
+        #     split_points.append(time)
 
-        curr_notes = _list_union(curr_notes, started_notes)
+        # curr_notes = _list_union(curr_notes, started_notes)
         max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
         total_events[time] = TrackEvent(time, curr_notes)
 
-    pdb.set_trace()
+    # pdb.set_trace()
 
     # for each of the notes in the list of parsed notes, put
     # fill their neighboring notes lists.
-    for note in parsed_notes:
-        start = note.start
-        end = note.end
-        this_note_number = note.note_number
-        related_events = _find_events_between_inclusive(start, end,
-                                                        event_times,
-                                                        total_events)
-        for event in related_events:
-            for n in event.curr_notes:
-                if n.note_number != this_note_number:
-                    note.neighboring_notes.append(n)
-    
-    # finally, assign the video positions
-    for note in parsed_notes:
-        if note.video_position is None:
-            note_nums = sorted([n.note_number for n in 
-                                note.neighboring_notes] + [note.note_number])
-            note.video_position = note_nums.index(note.note_number)
+    for time, notes in note_starts.items():
+        for i, n in enumerate(notes):
+            n.video_position = i
+            n.num_sim_notes = len(notes)
+
+    # TODO TODO TODO TODO
+    # THIS IS NOT DONE
+    # TODO TODO TODO TODO
+    time = 0
+    curr_num_notes = 0
+    end_time = max(note_ends.keys())
+    while time < end_time:
+        event = total_events.get(time, None)
+        if event is None and curr_num_notes == 0:
+            split_points.append(time)
+        elif event is not None:
+            curr_num_notes = event.num_simultaneous_notes
+            if curr_num_notes == 0:
+                split_points.append(time)
+        time += 1
+
+    # for note in parsed_notes:
+    #     start = note.start
+    #     end = note.end
+    #     this_note_number = note.note_number
+    #     
+    #     # related_events = note_starts[start]
+    #     related_events = _find_events_between_inclusive(start, end,
+    #                                                     event_times,
+    #                                                     total_events)
+    #     for event in filter(lambda e: e not in parsed_events, related_events):
+    #         for n in event.curr_notes:
+    #             if n.note_number != this_note_number:
+    #                 note.neighboring_notes.append(n)
+    #         parsed_events.add(event)
+    # 
+    # # finally, assign the video positions
+    # for note in parsed_notes:
+    #     if note.video_position is None:
+    #         note_nums = sorted([n.note_number for n in 
+    #                             note.neighboring_notes] + [note.note_number])
+    #         note.video_position = note_nums.index(note.note_number)
+    print split_points
     return split_points
+
+
+def _note_lists_equal(l1, l2):
+    if len(l1) != len(l2):
+        return False
+    numbers = set(n.note_number for n in l1)
+    for n in l2:
+        if n.note_number in numbers:
+            return True
+    return False
+
 
 
 def _find_events_between_inclusive(start, end, sorted_times, total_events):
