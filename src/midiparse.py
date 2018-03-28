@@ -79,7 +79,6 @@ def analyse_track(miditrack, total_num_ticks):
     """
     curr_events = []
     parsed_notes = []
-    parsed_events = {}
     max_simultaneous_notes = 0
     max_velocity = 0
     for event in miditrack:
@@ -96,6 +95,7 @@ def analyse_track(miditrack, total_num_ticks):
                     parsed_notes.append(note)
                     curr_events.remove(ev)
                     break
+    parsed_notes.sort(key=lambda n: n.start)
     split_points = _parse_events(parsed_notes, total_num_ticks)
     return parsed_notes, max_velocity, split_points
 

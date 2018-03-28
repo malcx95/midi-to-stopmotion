@@ -45,8 +45,8 @@ def compose(instruments, midipattern, width,
     # pdb.set_trace()
     written_clips = []
 
-    # TODO use
-    tracks, common_split_points = _analyse_all_tracks(midipattern, resolution)
+    split_tracks = _analyse_all_tracks(midipattern, resolution)
+    pdb.set_trace()
 
     for name, (parsed_notes, max_velocity, _) in tracks.items():
         print "Composing track " + name + "..."
@@ -154,9 +154,47 @@ def _analyse_all_tracks(midipattern, resolution):
                                                midipattern)}
     all_split_points = [analysis[2] for analysis in analysed_tracks.values()]
 
-    return analysed_tracks, _get_common_split_points(all_split_points,
-                                                     resolution)
+    # TODO
+    # 1. Arrange so all clips of one particular track can easily be
+    #    created. This way we don't have to load all instruments    
+    #    or reload them multiple times.
+    # 2. Create some data structure with all the name of the saved
+    #    files corresponding to the ranges of notes in the order that
+    #    they should appear in the song. This way, we can create all clips
+    #    in an arbitrary order and assemble all clips at the end.
+    return _split_tracks(analysed_tracks, 
+                         _get_common_split_points(all_split_points,
+                                                  resolution))
 
+
+def _extract_notes_between_ticks(start, end, analysed_tracks):
+    res = {name: [] for name in analysed_tracks}
+
+    for name, (parsed_notes, max_velocity, _) in analysed_tracks.items():
+        for note in parsed_notes:
+            if note.start >= end:
+                break
+            if note.start >= start and note.end <= end:
+                res[name].append(note)
+    return res
+
+
+def _split_tracks(analysed_tracks, split_points):
+    result = {}
+    
+    # create ranges
+    assert split_points[0] == 0
+    start = split_points[0]
+    for point in split_points[1:]:
+        result[(start, point)] = None
+        start = point
+
+    for range_ in result.keys():
+        start, end = range_
+        result[range_] = _extract_notes_between_ticks(start, end,
+                                                      analysed_tracks)
+    return result
+        
 
 def _is_valid_tone_name(name):
     name_split = name.split('.')
