@@ -10,6 +10,8 @@ import json
 
 SUPPORTED_EXTENSIONS = ['mp4']
 
+MIN_NUM_MEASURES_BEFORE_SPLIT = 2
+
 
 # TODO when composing all tracks, save an array where
 # each index tells whether there is something playing
@@ -44,26 +46,22 @@ def compose(instruments, midipattern, width,
     written_clips = []
 
     # TODO use
-    # tracks = _analyse_all_tracks(midipattern)
+    tracks, common_split_points = _analyse_all_tracks(midipattern, resolution)
 
-    for i, track in enumerate(midipattern[1:]):
-        name = midiparse.get_instrument_name(track)
-        # TODO check if there are any notes instead
-        if name is None:
-            continue
+    for name, (parsed_notes, max_velocity, _) in tracks.items():
         print "Composing track " + name + "..."
         file_name = name + '.mp4'
         if os.path.isfile(file_name):
-            written_clips.append((len(track), file_name, name))
+            written_clips.append((len(parsed_notes), file_name, name))
             continue
         if name is None:
             # FIXME this is ugly
             name = "Untitled Instrument 1"
         try:
-            _process_track(instruments, name, source_dir, track, pulse_length,
-                           width, height, file_name, 
-                           len(midipattern[1:]))
-            written_clips.append((len(track), file_name, name))
+            _process_track(instruments, name, source_dir, parsed_notes,
+                           pulse_length, width, height, file_name, 
+                           len(tracks), max_velocity)
+            written_clips.append((len(parsed_notes), file_name, name))
         # except Exception:
         #     raise
         except IOError:
@@ -120,10 +118,44 @@ def _try_load_volume_file(volume_file_name):
         return json.loads(f.read())
 
 
-def _analyse_all_tracks(midipattern):
-    return {midiparse.get_instrument_name(miditrack): 
-            midiparse.analyse_track(miditrack)
-            for miditrack in midipattern[1:]}
+def _get_common_split_points(all_split_points, resolution):
+    common_split_points = []
+    if len(all_split_points) == 1:
+        common_split_points = list(all_split_points[0])
+    else:
+        first_split_points = all_split_points[0]
+        for point in first_split_points:
+            found = True
+            for split_points in all_split_points:
+                if point not in split_points:
+                    found = False
+                    break
+            if found:
+                common_split_points.append(point)
+
+    min_num_ticks_to_split = resolution*MIN_NUM_MEASURES_BEFORE_SPLIT*4
+
+    filtered_points = []
+    last_split = float('-inf')
+
+    for point in sorted(common_split_points):
+        if point - last_split >= min_num_ticks_to_split:
+            filtered_points.append(point)
+            last_split = point
+
+    return filtered_points
+
+
+def _analyse_all_tracks(midipattern, resolution):
+    total_num_ticks = midiparse.get_total_num_ticks(midipattern)
+    analysed_tracks = {midiparse.get_instrument_name(miditrack): 
+                       midiparse.analyse_track(miditrack, total_num_ticks)
+                       for miditrack in filter(midiparse.has_notes,
+                                               midipattern)}
+    all_split_points = [analysis[2] for analysis in analysed_tracks.values()]
+
+    return analysed_tracks, _get_common_split_points(all_split_points,
+                                                     resolution)
 
 
 def _is_valid_tone_name(name):
@@ -254,8 +286,8 @@ def _partition(width, height, num_sim_notes, pos):
 
 
 def _process_track(instruments, instrument_name, source_dir, 
-                   midi_track, pulse_length,
-                   width, height, file_name, num_sim_tracks):
+                   parsed_notes, pulse_length,
+                   width, height, file_name, num_sim_tracks, max_velocity):
     """
     Composes one midi track into a stop motion video clip.
     Writes a file of this with the given file name.
@@ -264,8 +296,6 @@ def _process_track(instruments, instrument_name, source_dir,
                                             instruments[instrument_name],
                                             source_dir)
     parsed_clips = []
-    parsed_notes, max_velocity = \
-            midiparse.analyse_track(midi_track)
     scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
     for note in parsed_notes:
         note_number = note.note_number

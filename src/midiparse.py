@@ -57,7 +57,23 @@ def _is_note_end(event):
             (isinstance(event, midi.NoteOnEvent) and _event_vel(event) == 0)
 
 
-def analyse_track(miditrack):
+def has_notes(miditrack):
+    if not miditrack:
+        return False
+    for event in miditrack:
+        if isinstance(event, midi.NoteOnEvent):
+            return True
+    return False
+
+
+def get_total_num_ticks(midipattern):
+    max_ticks = 0
+    for track in filter(has_notes, midipattern):
+        max_ticks = max(max_ticks, track[-1].tick)
+    return max_ticks
+
+
+def analyse_track(miditrack, total_num_ticks):
     """
     Converts a miditrack to a list of Notes and a dictionary of events
     """
@@ -80,11 +96,11 @@ def analyse_track(miditrack):
                     parsed_notes.append(note)
                     curr_events.remove(ev)
                     break
-    _parse_events(parsed_notes)
-    return parsed_notes, max_velocity
+    split_points = _parse_events(parsed_notes, total_num_ticks)
+    return parsed_notes, max_velocity, split_points
 
 
-def _parse_events(parsed_notes):
+def _parse_events(parsed_notes, total_num_ticks):
     """
     Assigns the neighboring_notes lists to each note
     as well as their video positions. Also returns
@@ -93,7 +109,7 @@ def _parse_events(parsed_notes):
     """
     note_starts = {}
     note_ends = {}
-    split_points = []
+    split_points = set()
 
     # create dictionaries containing information on when
     # the notes start and end
@@ -140,20 +156,17 @@ def _parse_events(parsed_notes):
             n.video_position = i
             n.num_sim_notes = len(notes)
 
-    # TODO TODO TODO TODO
-    # THIS IS NOT DONE
-    # TODO TODO TODO TODO
     time = 0
     curr_num_notes = 0
-    end_time = max(note_ends.keys())
-    while time < end_time:
+
+    while time < total_num_ticks:
         event = total_events.get(time, None)
         if event is None and curr_num_notes == 0:
-            split_points.append(time)
+            split_points.add(time)
         elif event is not None:
             curr_num_notes = event.num_simultaneous_notes
             if curr_num_notes == 0:
-                split_points.append(time)
+                split_points.add(time)
         time += 1
 
     # for note in parsed_notes:
@@ -177,7 +190,6 @@ def _parse_events(parsed_notes):
     #         note_nums = sorted([n.note_number for n in 
     #                             note.neighboring_notes] + [note.note_number])
     #         note.video_position = note_nums.index(note.note_number)
-    print split_points
     return split_points
 
 
@@ -269,7 +281,7 @@ def get_instruments(midipattern):
     """
     result = {}
     i = 0
-    for track in midipattern[1:]:
+    for track in filter(has_notes, midipattern):
         i += 1
         name = get_instrument_name(track, i)
         result[name] = _extract_notes(track)
