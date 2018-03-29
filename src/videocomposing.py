@@ -9,6 +9,7 @@ import math
 import json
 
 SUPPORTED_EXTENSIONS = ['mp4']
+WORKING_DIR_NAME = 'temp'
 
 MIN_NUM_MEASURES_BEFORE_SPLIT = 2
 
@@ -45,10 +46,13 @@ def compose(instruments, midipattern, width,
     # pdb.set_trace()
     written_clips = []
 
-    split_tracks = _analyse_all_tracks(midipattern, resolution)
-    pdb.set_trace()
+    # instrument_segments   :: {instrument name: {(start, end): [notes]}}
+    # song_segments         :: [(start, end), [segment file name]]
+    
+    instrument_segments, song_segments = _analyse_all_tracks(
+                                            midipattern, resolution)
 
-    for name, (parsed_notes, max_velocity, _) in tracks.items():
+    for instrument_name, segments in instrument_segments.items():
         print "Composing track " + name + "..."
         file_name = name + '.mp4'
         if os.path.isfile(file_name):
@@ -154,17 +158,27 @@ def _analyse_all_tracks(midipattern, resolution):
                                                midipattern)}
     all_split_points = [analysis[2] for analysis in analysed_tracks.values()]
 
-    # TODO
-    # 1. Arrange so all clips of one particular track can easily be
-    #    created. This way we don't have to load all instruments    
-    #    or reload them multiple times.
-    # 2. Create some data structure with all the name of the saved
-    #    files corresponding to the ranges of notes in the order that
-    #    they should appear in the song. This way, we can create all clips
-    #    in an arbitrary order and assemble all clips at the end.
-    return _split_tracks(analysed_tracks, 
-                         _get_common_split_points(all_split_points,
-                                                  resolution))
+    split_tracks = _split_tracks(analysed_tracks,
+                                 _get_common_split_points(all_split_points, 
+                                                          resolution))
+    instrument_segments = {}
+    for range_, instrument_notes in split_tracks.items():
+        for instrument_name, notes in instrument_notes.items():
+            if instrument_name not in instrument_segments:
+                instrument_segments[instrument_name] = {}
+            instrument_segments[instrument_name][range_] = notes
+
+    song_segments = []
+    for range_ in sorted(split_tracks.keys(), key=lambda r: r[0]):
+        start, end = range_
+        song_segments.append((range_, 
+                              [_segment_name(start, end, name) 
+                                  for name in split_tracks[range_]]))
+    return instrument_segments, song_segments
+
+
+def _segment_file_name(start, end, instrument):
+    return '{}-{}-{}.mp4'.format(instrument, start, end)
 
 
 def _extract_notes_between_ticks(start, end, analysed_tracks):
@@ -176,6 +190,12 @@ def _extract_notes_between_ticks(start, end, analysed_tracks):
                 break
             if note.start >= start and note.end <= end:
                 res[name].append(note)
+    
+    # remove empty segments
+    for name in res.keys():
+        if not res[name]:
+            del res[name]
+
     return res
 
 
