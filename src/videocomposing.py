@@ -10,6 +10,7 @@ import json
 
 SUPPORTED_EXTENSIONS = ['mp4']
 WORKING_DIR_NAME = 'temp'
+OFFSET_FILE_NAME = 'offset.json'
 
 MIN_NUM_MEASURES_BEFORE_SPLIT = 2
 
@@ -269,29 +270,55 @@ def _map_notes(avail_tones, instrument_notes):
     return res
 
 
+def _try_load_offset_file(instrument_dir):
+    file_name = os.path.join(instrument_dir, OFFSET_FILE_NAME)
+    if os.path.isfile(file_name):
+        with open(file_name) as f:
+            return json.loads(f.read())
+    return None
+
+
+def _write_offset_file(instrument_dir, offset):
+    with open(os.path.join(instrument_dir, OFFSET_FILE_NAME), 'w') as f:
+        f.write(json.dumps(offset))
+
+
 def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
     res = {}
     min_vol = float('inf')
     avail_tones = _get_available_tones(os.path.join(source_dir, 
                                                     instrument_name))
     mapped_notes = _map_notes(avail_tones, instrument_notes)
+    offset_map = _try_load_offset_file(os.path.join(instrument_name, 
+                                                    source_dir))
+    new_offset_map = {}
+
     for note_number, note_str in mapped_notes.items():
         # note_str = midiparse.note_number_to_note_string(note_number)
         print "Loading " + note_str
         file_name = ""
         file_name = os.path.join(source_dir, instrument_name,
                                      note_str + ".mp4")
-        if not os.path.isfile(file_name):
-            error("The required file \"{}\" couldn't be found"
-                  .format(file_name))
 
         clip = edit.VideoFileClip(file_name)
         tmp_file = 'STUPIDMOVIEPY' + note_str + '.mp4'
         clip.write_videofile(tmp_file)
-        offset, max_vol = audioanalysis.find_offset_and_max_vol(clip)
+
+        offset, max_vol = None, None
+        if offset_map is not None:
+            offset, max_vol = offset_map[note_number]
+        else:
+            offset, max_vol = audioanalysis.find_offset_and_max_vol(clip)
+            new_offset_map[note_number] = (offset, max_vol)
+
         res[note_number] = (clip, offset, max_vol)
         os.remove(tmp_file)
         min_vol = min(min_vol, max_vol)
+
+    if new_offset_map:
+        _write_offset_file(os.path.join(instrument_name, source_dir),
+                           new_offset_map)
+
     return res, min_vol
 
 
