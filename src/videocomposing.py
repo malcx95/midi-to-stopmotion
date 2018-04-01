@@ -40,80 +40,102 @@ MIN_NUM_MEASURES_BEFORE_SPLIT = 2
 
 def compose(instruments, midipattern, width, 
             height, source_dir, volume_file_name):
+    _create_working_dir()
     volumes = _try_load_volume_file(volume_file_name)
     tempo = midiparse.get_tempo(midipattern)
     resolution = midiparse.get_resolution(midipattern)
     pulse_length = 60.0/(tempo*resolution)
-    # pdb.set_trace()
-    written_clips = []
 
-    # instrument_segments   :: {instrument name: {(start, end): [notes]}}
-    # song_segments         :: [(start, end), [segment file name]]
+    # instrument_segments   :: {instrument name: (max_velocity, {(start, end): [notes]})}
+    # song_segments         :: [((start, end), [(instrument name, segment file name)])]
     
     instrument_segments, song_segments = _analyse_all_tracks(
                                             midipattern, resolution)
 
-    for instrument_name, segments in instrument_segments.items():
-        print "Composing track " + name + "..."
-        file_name = name + '.mp4'
-        if os.path.isfile(file_name):
-            written_clips.append((len(parsed_notes), file_name, name))
-            continue
-        if name is None:
-            # FIXME this is ugly
-            name = "Untitled Instrument 1"
-        try:
-            _process_track(instruments, name, source_dir, parsed_notes,
-                           pulse_length, width, height, file_name, 
-                           len(tracks), max_velocity)
-            written_clips.append((len(parsed_notes), file_name, name))
+    for instrument_name, (max_velocity, segments) in instrument_segments.items():
+        print "Composing track " + instrument_name + "..."
+        # if os.path.isfile(file_name):
+        #     written_clips.append((len(parsed_notes), file_name, name))
+        #     continue
+        # if name is None:
+        #     # FIXME this is ugly
+        #     name = "Untitled Instrument 1"
+
+        _process_track(instruments, instrument_name, source_dir,
+                       segments, pulse_length, width, height,
+                       max_velocity)
+        # written_clips.append((len(parsed_notes), file_name, name))
+        print ''
         # except Exception:
         #     raise
-        except IOError:
-            raise
-        except Exception as e:
-            print "Couldn't process instrument {}: {}, continuing...".format(
-                name, e.message)
-            continue
+        # except IOError:
+        #     raise
+        # except Exception as e:
+        #     print "Couldn't process instrument {}: {}, continuing...".format(
+        #         name, e.message)
+        #     continue
 
-    written_clips.sort(key=lambda s: s[0], reverse=True)
+    # written_clips.sort(key=lambda s: s[0], reverse=True)
 
     final_clips = []
-    for i, (_, file_name, instrument_name) in enumerate(written_clips):
-        vol = 0.5
-        if volumes is not None:
-            vol = volumes.get(instrument_name, 0.5)
-        clip = edit.VideoFileClip(file_name)
-        x, y, w, h = _partition(width, height, len(written_clips), i)
-        final_clips.append(
-            fx.resize(clip, newsize=(w, h))
-            .set_position((x, y))
-            .volumex(vol)
-        )
+    for (start, end), simultaneous_segments in song_segments:
+        segment_clips = []
+        num_sim_segments = len(simultaneous_segments)
+        for i, (instrument_name, segment_file) in enumerate(simultaneous_segments):
+            vol = 0.5
+            if volumes is not None:
+                vol = volumes.get(instrument_name, 0.5)
+            x, y, w, h = _partition(width, height, num_sim_segments, i)
+            clip = edit.VideoFileClip(os.path.join(WORKING_DIR_NAME, 
+                                                   segment_file))
+            segment_clips.append(fx.resize(clip, newsize=(w, h))
+                                 .set_position((x, y))
+                                 .volumex(vol))
+
+        comp_clip = edit.CompositeVideoClip(size=(width, height), 
+                                            clips=segment_clips)
+        final_clips.append(comp_clip.set_start(start*pulse_length))
+
+    # for i, (_, file_name, instrument_name) in enumerate(written_clips):
+    #     vol = 0.5
+    #     if volumes is not None:
+    #         vol = volumes.get(instrument_name, 0.5)
+    #     clip = edit.VideoFileClip(file_name)
+    #     x, y, w, h = _partition(width, height, len(written_clips), i)
+    #     final_clips.append(
+    #         fx.resize(clip, newsize=(w, h))
+    #         .set_position((x, y))
+    #         .volumex(vol)
+    #     )
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
 
 
-def find_common_split_points(split_point_lists, min_duration):
-    res = []
-    first_list = split_point_lists[0]
+def _create_working_dir():
+    if not os.path.isdir(WORKING_DIR_NAME):
+        os.makedirs(WORKING_DIR_NAME)
 
-    for time in first_list:
-        found = True
-        for l in split_point_lists[1:]:
-            if time not in l:
-                found = False
-                break
-        if found:
-            res.append(time)
-    
-    i = 0
-    while True:
-        if i + 1 >= len(res):
-            break
-        while res[i + 1] - res[i] < min_duration and i + 1 < len(res):
-            del res[i + 1]
 
-    return res
+# def find_common_split_points(split_point_lists, min_duration):
+#     res = []
+#     first_list = split_point_lists[0]
+# 
+#     for time in first_list:
+#         found = True
+#         for l in split_point_lists[1:]:
+#             if time not in l:
+#                 found = False
+#                 break
+#         if found:
+#             res.append(time)
+#     
+#     i = 0
+#     while True:
+#         if i + 1 >= len(res):
+#             break
+#         while res[i + 1] - res[i] < min_duration and i + 1 < len(res):
+#             del res[i + 1]
+# 
+#     return res
 
 
 def _try_load_volume_file(volume_file_name):
@@ -165,15 +187,16 @@ def _analyse_all_tracks(midipattern, resolution):
     instrument_segments = {}
     for range_, instrument_notes in split_tracks.items():
         for instrument_name, notes in instrument_notes.items():
+            max_velocity = analysed_tracks[instrument_name][1]
             if instrument_name not in instrument_segments:
-                instrument_segments[instrument_name] = {}
-            instrument_segments[instrument_name][range_] = notes
+                instrument_segments[instrument_name] = (max_velocity, {})
+            instrument_segments[instrument_name][1][range_] = notes
 
     song_segments = []
     for range_ in sorted(split_tracks.keys(), key=lambda r: r[0]):
         start, end = range_
         song_segments.append((range_, 
-                              [_segment_name(start, end, name) 
+                              [(name, _segment_file_name(start, end, name))
                                   for name in split_tracks[range_]]))
     return instrument_segments, song_segments
 
@@ -274,8 +297,9 @@ def _try_load_offset_file(instrument_dir):
     file_name = os.path.join(instrument_dir, OFFSET_FILE_NAME)
     if os.path.isfile(file_name):
         with open(file_name) as f:
-            return json.loads(f.read())
-    return None
+            offset_map = json.loads(f.read())
+            return {int(k): v for k, v in offset_map.items()}
+    return {}
 
 
 def _write_offset_file(instrument_dir, offset):
@@ -289,9 +313,9 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
     avail_tones = _get_available_tones(os.path.join(source_dir, 
                                                     instrument_name))
     mapped_notes = _map_notes(avail_tones, instrument_notes)
-    offset_map = _try_load_offset_file(os.path.join(instrument_name, 
-                                                    source_dir))
-    new_offset_map = {}
+    offset_map = _try_load_offset_file(os.path.join(source_dir, 
+                                                    instrument_name))
+    edited_offset_map = False
 
     for note_number, note_str in mapped_notes.items():
         # note_str = midiparse.note_number_to_note_string(note_number)
@@ -301,23 +325,26 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
                                      note_str + ".mp4")
 
         clip = edit.VideoFileClip(file_name)
-        tmp_file = 'STUPIDMOVIEPY' + note_str + '.mp4'
-        clip.write_videofile(tmp_file)
+        tmp_file = os.path.join(WORKING_DIR_NAME,
+                                'STUPIDMOVIEPY' + note_str + '.mp4')
 
         offset, max_vol = None, None
-        if offset_map is not None:
+        if offset_map is not None and note_number in offset_map:
             offset, max_vol = offset_map[note_number]
         else:
             offset, max_vol = audioanalysis.find_offset_and_max_vol(clip)
-            new_offset_map[note_number] = (offset, max_vol)
+            print 'Analysing ' + note_str + '...'
+            clip.write_videofile(tmp_file, progress_bar=False, verbose=False)
+            offset_map[note_number] = (offset, max_vol)
+            edited_offset_map = True
+            os.remove(tmp_file)
 
         res[note_number] = (clip, offset, max_vol)
-        os.remove(tmp_file)
         min_vol = min(min_vol, max_vol)
 
-    if new_offset_map:
-        _write_offset_file(os.path.join(instrument_name, source_dir),
-                           new_offset_map)
+    if edited_offset_map:
+        _write_offset_file(os.path.join(source_dir, instrument_name),
+                           offset_map)
 
     return res, min_vol
 
@@ -370,19 +397,10 @@ def _partition(width, height, num_sim_notes, pos):
         return (pos // 3)*w, (pos % 3)*h, w, h
 
 
-def _process_track(instruments, instrument_name, source_dir, 
-                   parsed_notes, pulse_length,
-                   width, height, file_name, num_sim_tracks, max_velocity):
-    """
-    Composes one midi track into a stop motion video clip.
-    Writes a file of this with the given file name.
-    """
-    clips, min_vol = _load_instrument_clips(instrument_name, 
-                                            instruments[instrument_name],
-                                            source_dir)
+def _process_segment(segment, pulse_length, width, height, max_velocity,
+                     file_name, clips, min_vol, segment_start):
     parsed_clips = []
-    scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
-    for note in parsed_notes:
+    for note in segment:
         note_number = note.note_number
         c, offset, max_vol = clips[note_number]
         clip = c.copy()
@@ -391,18 +409,43 @@ def _process_track(instruments, instrument_name, source_dir,
         x, y, w, h = _partition(width, height, 
                                 num_sim_notes, note.video_position)
 
-        volume = (float(note.velocity) / float(max_velocity))*(min_vol/max_vol)
+        volume = (float(note.velocity)/float(max_velocity))*(min_vol/max_vol)
 
         clip = clip.subclip(offset)
-        clip = clip.set_start(note.start*pulse_length)# + offset)
+        clip = clip.set_start((note.start - segment_start)*pulse_length)
         clip = clip.volumex(volume)
         d = clip.duration
         clip = clip.set_duration(min(note.duration*pulse_length, d))
-        clip = clip.set_position((x//scale_factor, y//scale_factor))
-        clip = fx.resize(clip, newsize=(w//scale_factor, h//scale_factor))
+        clip = clip.set_position((x, y))
+        clip = fx.resize(clip, newsize=(w, h))
         parsed_clips.append(clip)
-    track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
-                                               height//scale_factor), 
+    track_clip = edit.CompositeVideoClip(size=(width, height), 
                                          clips=parsed_clips)
-    track_clip.write_videofile(file_name, fps=24)
+    track_clip.write_videofile(file_name, fps=24, 
+                               verbose=False, progress_bar=False)
+
+
+def _process_track(instruments, instrument_name, source_dir, 
+                   segments, pulse_length,
+                   width, height, max_velocity):
+    """
+    Composes one midi track into a stop motion video clip.
+    Writes a file of this with the given file name.
+    """
+    clips, min_vol = _load_instrument_clips(instrument_name, 
+                                            instruments[instrument_name],
+                                            source_dir)
+    parsed_clips = []
+    # scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
+    for i, ((start, end), segment) in enumerate(segments.items()):
+        file_name = os.path.join(WORKING_DIR_NAME, 
+                                 _segment_file_name(start, end, 
+                                                    instrument_name))
+        print 'Processing segment {} out of {}, as file {}...'.format(
+                i+1, len(segments), file_name)
+        if os.path.isfile(file_name):
+            continue
+        _process_segment(segment, pulse_length, width, 
+                         height, max_velocity, file_name, 
+                         clips, min_vol, start)
 

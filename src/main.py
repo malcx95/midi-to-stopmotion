@@ -73,7 +73,7 @@ def main():
     if args.instruments:
         print_instruments(pattern)
     else:
-        # load the clips for the tones that each instrument plays
+        # load the that each instrument plays
         instruments = midiparse.get_instruments(pattern)
 
         final_clip = videocomposing.compose(instruments, pattern,
