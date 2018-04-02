@@ -1,3 +1,4 @@
+import multiprocessing
 import moviepy.editor as edit
 import moviepy.video.fx.all as fx
 import pdb
@@ -7,6 +8,18 @@ import os
 import audioanalysis
 import math
 import json
+import time
+import progress.bar as bar
+import sys
+
+# Message: (1, 0)
+MSG_PROCESSED_SEGMENT = 1
+
+# Message: (2, Exception)
+MSG_FATAL_ERROR = 2
+
+# Message: (3, num processed segments)
+MSG_DONE = 3
 
 SUPPORTED_EXTENSIONS = ['mp4']
 WORKING_DIR_NAME = 'temp'
@@ -15,31 +28,8 @@ OFFSET_FILE_NAME = 'offset.json'
 MIN_NUM_MEASURES_BEFORE_SPLIT = 2
 
 
-# TODO when composing all tracks, save an array where
-# each index tells whether there is something playing
-# at this timestamp. That way you can tell which clips
-# should be shown and how to partition them
-
-# Better idea: when parsing the midifile, 
-# save all timestamps where there are no notes
-# playing or when all the notes that were playing have stopped,
-# so the track can be safely split at that point. Then,
-# using this information about all tracks, find the timestamps
-# where all tracks can be safely split. Then, for each of these timestamps,
-# partition the song between these timestamps and compose them individually.
-# Then when all tracks have been composed for one partition, compose these
-# into one clip using _partition. Then finally, join all partitions into one
-# clip.
-
-# You might need to define a minimum length of a partition though, since,
-# for instance, moments of complete silence would register as a whole lot
-# of partitions. A minimum length of a one or two measures should be fine.
-
-# Also multithread this, such that each thread processes a partition.
-
-
 def compose(instruments, midipattern, width, 
-            height, source_dir, volume_file_name):
+            height, source_dir, volume_file_name, num_threads):
     _create_working_dir()
     volumes = _try_load_volume_file(volume_file_name)
     tempo = midiparse.get_tempo(midipattern)
@@ -52,30 +42,69 @@ def compose(instruments, midipattern, width,
     instrument_segments, song_segments = _analyse_all_tracks(
                                             midipattern, resolution)
 
+    total_num_segments = 0
+    processes = []
     for instrument_name, (max_velocity, segments) in instrument_segments.items():
-        print "Composing track " + instrument_name + "..."
-        # if os.path.isfile(file_name):
-        #     written_clips.append((len(parsed_notes), file_name, name))
-        #     continue
-        # if name is None:
-        #     # FIXME this is ugly
-        #     name = "Untitled Instrument 1"
+        if instrument_name is None:
+            # FIXME this is ugly
+            instrument_name = "Untitled Instrument 1"
 
-        _process_track(instruments, instrument_name, source_dir,
-                       segments, pulse_length, width, height,
-                       max_velocity)
-        # written_clips.append((len(parsed_notes), file_name, name))
-        print ''
-        # except Exception:
-        #     raise
-        # except IOError:
-        #     raise
-        # except Exception as e:
-        #     print "Couldn't process instrument {}: {}, continuing...".format(
-        #         name, e.message)
-        #     continue
+        queue = multiprocessing.Queue()
+        args = (instruments, instrument_name, source_dir, segments, 
+                pulse_length, width, height, max_velocity, queue)
+        process = multiprocessing.Process(target=_process_track, args=args)
+        processes.append((instrument_name, process, queue))
+        total_num_segments += len(segments)
 
-    # written_clips.sort(key=lambda s: s[0], reverse=True)
+    running_processes = []
+
+    progress_bar = bar.ChargingBar('', max=total_num_segments)
+    done = False
+    num_processed_segments = 0
+    while not done:
+        time.sleep(0.1)
+        done_instruments = []
+        for instrument_name, process, queue in running_processes:
+            while not queue.empty():
+                msg_type, contents = queue.get()
+                if msg_type == MSG_PROCESSED_SEGMENT:
+                    num_processed_segments += 1
+                    progress_bar.next()
+                elif msg_type == MSG_DONE:
+                    done_instruments.append(instrument_name)
+                elif msg_type == MSG_FATAL_ERROR:
+                    raise contents
+
+        processes_changed = False
+
+        # remove the instruments that are done
+        for instrument_name in done_instruments:
+            index = 0
+            for i, (i_name, p, q) in enumerate(running_processes):
+                if instrument_name == i_name:
+                    index = i
+                    break
+            _, process, queue = running_processes.pop(index)
+            process.join()
+            processes_changed = True
+
+        while len(running_processes) < num_threads and len(processes) > 0:
+            p = processes.pop()
+            p[1].start()
+            running_processes.append(p)
+            processes_changed = True
+
+        if not running_processes:
+            done = True
+
+        if processes_changed and not done:
+            progress_message = "Processing instruments: "
+            for name, _, _ in running_processes:
+                progress_message += name + ', '
+            progress_message = '\n' + progress_message[:-2]
+            print(progress_message)
+    
+    progress_bar.finish()
 
     final_clips = []
     for (start, end), simultaneous_segments in song_segments:
@@ -96,46 +125,12 @@ def compose(instruments, midipattern, width,
                                             clips=segment_clips)
         final_clips.append(comp_clip.set_start(start*pulse_length))
 
-    # for i, (_, file_name, instrument_name) in enumerate(written_clips):
-    #     vol = 0.5
-    #     if volumes is not None:
-    #         vol = volumes.get(instrument_name, 0.5)
-    #     clip = edit.VideoFileClip(file_name)
-    #     x, y, w, h = _partition(width, height, len(written_clips), i)
-    #     final_clips.append(
-    #         fx.resize(clip, newsize=(w, h))
-    #         .set_position((x, y))
-    #         .volumex(vol)
-    #     )
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
 
 
 def _create_working_dir():
     if not os.path.isdir(WORKING_DIR_NAME):
         os.makedirs(WORKING_DIR_NAME)
-
-
-# def find_common_split_points(split_point_lists, min_duration):
-#     res = []
-#     first_list = split_point_lists[0]
-# 
-#     for time in first_list:
-#         found = True
-#         for l in split_point_lists[1:]:
-#             if time not in l:
-#                 found = False
-#                 break
-#         if found:
-#             res.append(time)
-#     
-#     i = 0
-#     while True:
-#         if i + 1 >= len(res):
-#             break
-#         while res[i + 1] - res[i] < min_duration and i + 1 < len(res):
-#             del res[i + 1]
-# 
-#     return res
 
 
 def _try_load_volume_file(volume_file_name):
@@ -319,7 +314,6 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
 
     for note_number, note_str in mapped_notes.items():
         # note_str = midiparse.note_number_to_note_string(note_number)
-        print "Loading " + note_str
         file_name = ""
         file_name = os.path.join(source_dir, instrument_name,
                                      note_str + ".mp4")
@@ -333,7 +327,6 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
             offset, max_vol = offset_map[note_number]
         else:
             offset, max_vol = audioanalysis.find_offset_and_max_vol(clip)
-            print 'Analysing ' + note_str + '...'
             clip.write_videofile(tmp_file, progress_bar=False, verbose=False)
             offset_map[note_number] = (offset, max_vol)
             edited_offset_map = True
@@ -427,25 +420,30 @@ def _process_segment(segment, pulse_length, width, height, max_velocity,
 
 def _process_track(instruments, instrument_name, source_dir, 
                    segments, pulse_length,
-                   width, height, max_velocity):
+                   width, height, max_velocity, queue):
     """
     Composes one midi track into a stop motion video clip.
     Writes a file of this with the given file name.
     """
-    clips, min_vol = _load_instrument_clips(instrument_name, 
-                                            instruments[instrument_name],
-                                            source_dir)
-    parsed_clips = []
-    # scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
-    for i, ((start, end), segment) in enumerate(segments.items()):
-        file_name = os.path.join(WORKING_DIR_NAME, 
-                                 _segment_file_name(start, end, 
-                                                    instrument_name))
-        print 'Processing segment {} out of {}, as file {}...'.format(
-                i+1, len(segments), file_name)
-        if os.path.isfile(file_name):
-            continue
-        _process_segment(segment, pulse_length, width, 
-                         height, max_velocity, file_name, 
-                         clips, min_vol, start)
+    try:
+        clips, min_vol = _load_instrument_clips(instrument_name, 
+                                                instruments[instrument_name],
+                                                source_dir)
+        parsed_clips = []
+        # scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
+        for i, ((start, end), segment) in enumerate(segments.items()):
+            file_name = os.path.join(WORKING_DIR_NAME, 
+                                     _segment_file_name(start, end, 
+                                                        instrument_name))
+            if os.path.isfile(file_name):
+                queue.put((MSG_PROCESSED_SEGMENT, 0))
+                continue
+            _process_segment(segment, pulse_length, width, 
+                             height, max_velocity, file_name, 
+                             clips, min_vol, start)
+            queue.put((MSG_PROCESSED_SEGMENT, 0))
+
+        queue.put((MSG_DONE, len(segments)))
+    except Exception as e:
+        queue.put((MSG_FATAL_ERROR, e))
 

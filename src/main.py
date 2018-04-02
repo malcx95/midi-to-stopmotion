@@ -50,6 +50,9 @@ def main():
                        help='Use the only provided instrument for all instruments', action='store_true')
     parser.add_argument('-v', '--volume', type=str,
                         help="Path to track volume config")
+    parser.add_argument('-t', '--threads', type=int, 
+                        help='Maximum number of concurrently processed instruments',
+                        default=2)
 
     args = parser.parse_args()
 
@@ -77,7 +80,8 @@ def main():
         instruments = midiparse.get_instruments(pattern)
 
         final_clip = videocomposing.compose(instruments, pattern,
-                                           1280, 720, source_dir, volume_file)
+                                           1280, 720, source_dir,
+                                            volume_file, args.threads)
                                            # 640, 360, source_dir, volume_file)
         final_clip.write_videofile('output.mp4')
 
