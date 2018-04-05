@@ -109,7 +109,6 @@ def _parse_events(parsed_notes, total_num_ticks):
     """
     note_starts = {}
     note_ends = {}
-    split_points = set()
 
     # create dictionaries containing information on when
     # the notes start and end
@@ -139,58 +138,50 @@ def _parse_events(parsed_notes, total_num_ticks):
         if time in note_ends:
             curr_notes = _list_subtract(curr_notes, note_ends[time])
 
-        # safe to split here
-        # if not curr_notes or _note_lists_equal(curr_notes, note_starts[time]):
-        #     split_points.append(time)
-
-        # curr_notes = _list_union(curr_notes, started_notes)
         max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
         total_events[time] = TrackEvent(time, curr_notes)
 
-    # pdb.set_trace()
-
-    # for each of the notes in the list of parsed notes, put
+    # for each of the notes in the list of parsed notes,
     # fill their neighboring notes lists.
     for time, notes in note_starts.items():
         for i, n in enumerate(notes):
             n.video_position = i
             n.num_sim_notes = len(notes)
 
+    silent_intervals, non_silent_intervals = _find_intervals_of_silence(parsed_notes)
+    # while time < total_num_ticks:
+    #     event = total_events.get(time, None)
+    #     if event is None and curr_num_notes == 0:
+    #         split_points.add(time)
+    #     elif event is not None:
+    #         curr_num_notes = event.num_simultaneous_notes
+    #         if curr_num_notes == 0:
+    #             split_points.add(time)
+    #     time += 1
+
+    return split_points
+
+
+def find_intervals_of_silence(parsed_notes):
     time = 0
     curr_num_notes = 0
+    note_intervals = set()
+    for note in parsed_notes:
+        range_ = (note.start, note.end)
+        if range_ not in note_intervals:
+            note_intervals.add(range_)
 
-    while time < total_num_ticks:
-        event = total_events.get(time, None)
-        if event is None and curr_num_notes == 0:
-            split_points.add(time)
-        elif event is not None:
-            curr_num_notes = event.num_simultaneous_notes
-            if curr_num_notes == 0:
-                split_points.add(time)
-        time += 1
+    silent_intervals = []
+    non_silent_intervals = []
 
-    # for note in parsed_notes:
-    #     start = note.start
-    #     end = note.end
-    #     this_note_number = note.note_number
-    #     
-    #     # related_events = note_starts[start]
-    #     related_events = _find_events_between_inclusive(start, end,
-    #                                                     event_times,
-    #                                                     total_events)
-    #     for event in filter(lambda e: e not in parsed_events, related_events):
-    #         for n in event.curr_notes:
-    #             if n.note_number != this_note_number:
-    #                 note.neighboring_notes.append(n)
-    #         parsed_events.add(event)
-    # 
-    # # finally, assign the video positions
-    # for note in parsed_notes:
-    #     if note.video_position is None:
-    #         note_nums = sorted([n.note_number for n in 
-    #                             note.neighboring_notes] + [note.note_number])
-    #         note.video_position = note_nums.index(note.note_number)
-    return split_points
+    last_end = -1
+    last_start = -1
+    for interval in sorted(note_intervals):
+        start, end = interval
+        if start != last_end:
+            non_silent_intervals.append((last_start, last_end))
+
+    return silent_intervals, non_silent_intervals
 
 
 def _note_lists_equal(l1, l2):
