@@ -11,6 +11,7 @@ import json
 import time
 import progress.bar as bar
 import sys
+import traceback
 
 # Message: (1, 0)
 MSG_PROCESSED_SEGMENT = 1
@@ -31,15 +32,16 @@ MAX_NUM_SIM_TRACKS = 9
 
 
 def compose(instruments, midipattern, width, 
-            height, source_dir, volume_file_name, num_threads):
+            height, source_dir, volume_file_name,
+            num_threads, instrument_config_file):
     _create_working_dir()
-    volumes = _try_load_volume_file(volume_file_name)
+    volumes = _try_load_json_file(volume_file_name)
+    instrument_config = _try_load_json_file(instrument_config_file)
     tempo = midiparse.get_tempo(midipattern)
     resolution = midiparse.get_resolution(midipattern)
     pulse_length = 60.0/(tempo*resolution)
 
     # analysed_tracks :: {(name1, name2, ...): (notes, max_velocity)}
-    
     analysed_tracks = _analyse_all_tracks(midipattern, resolution)
 
     track_clip_file_names = []
@@ -51,9 +53,9 @@ def compose(instruments, midipattern, width,
                                  + '.mp4')
         track_clip_file_names.append((len(notes), file_name))
         queue = multiprocessing.Queue()
-        args = (instruments, instrument_names, source_dir, notes, 
-                pulse_length, width, height, 
-                max_velocity, queue, file_name, volumes, total_num_tracks)
+        args = (instruments, instrument_names, source_dir, instrument_config,
+                notes, pulse_length, width, height, max_velocity,
+                queue, file_name, volumes, total_num_tracks)
         process = multiprocessing.Process(target=_process_track, args=args)
         processes.append((instrument_names, process, queue))
 
@@ -125,10 +127,10 @@ def _create_working_dir():
         os.makedirs(WORKING_DIR_NAME)
 
 
-def _try_load_volume_file(volume_file_name):
-    if volume_file_name is None:
+def _try_load_json_file(json_file_name):
+    if json_file_name is None:
         return None
-    with open(volume_file_name) as f:
+    with open(json_file_name) as f:
         return json.loads(f.read())
 
 
@@ -219,52 +221,12 @@ def _analyse_all_tracks(midipattern, resolution):
                        midiparse.analyse_track(miditrack, total_num_ticks)
                        for miditrack in filter(midiparse.has_notes,
                                                midipattern)}
-    # pdb.set_trace()
     _merge_analysed_tracks(analysed_tracks)
     for track, _ in analysed_tracks.values():
-        midiparse._assign_video_positions(track)
+        midiparse.assign_video_positions(track)
         
     return analysed_tracks
 
-
-def _segment_file_name(start, end, instrument):
-    return '{}-{}-{}.mp4'.format(instrument, start, end)
-
-
-def _extract_notes_between_ticks(start, end, analysed_tracks):
-    res = {name: [] for name in analysed_tracks}
-
-    for name, (parsed_notes, max_velocity, _) in analysed_tracks.items():
-        for note in parsed_notes:
-            if note.start >= end:
-                break
-            if note.start >= start and note.end <= end:
-                res[name].append(note)
-    
-    # remove empty segments
-    for name in res.keys():
-        if not res[name]:
-            del res[name]
-
-    return res
-
-
-def _split_tracks(analysed_tracks, split_points):
-    result = {}
-    
-    # create ranges
-    assert split_points[0] == 0
-    start = split_points[0]
-    for point in split_points[1:]:
-        result[(start, point)] = None
-        start = point
-
-    for range_ in result.keys():
-        start, end = range_
-        result[range_] = _extract_notes_between_ticks(start, end,
-                                                      analysed_tracks)
-    return result
-        
 
 def _is_valid_tone_name(name):
     name_split = name.split('.')
@@ -333,25 +295,38 @@ def _write_offset_file(instrument_dir, offset):
         f.write(json.dumps(offset))
 
 
-def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
+def _load_instrument_clips(instrument_name, instrument_notes, 
+                           source_dir, instrument_config):
     res = {}
+    instrument_path = None
+    if instrument_config is not None:
+        instrument_path = instrument_config[instrument_name]
+    else:
+        instrument_path = os.path.join(source_dir, instrument_name)
+
     min_vol = float('inf')
-    avail_tones = _get_available_tones(os.path.join(source_dir, 
-                                                    instrument_name))
+    avail_tones = _get_available_tones(instrument_path)
     mapped_notes = _map_notes(avail_tones, instrument_notes)
-    offset_map = _try_load_offset_file(os.path.join(source_dir, 
-                                                    instrument_name))
+
+    while True:
+        try:
+            offset_map = _try_load_offset_file(instrument_path)
+            break
+        except IOError:
+            time.sleep(1)
+        
+
     edited_offset_map = False
 
     for note_number, note_str in mapped_notes.items():
         # note_str = midiparse.note_number_to_note_string(note_number)
-        file_name = ""
-        file_name = os.path.join(source_dir, instrument_name,
-                                     note_str + ".mp4")
+
+        file_name = os.path.join(instrument_path, 
+                                 note_str + ".mp4")
 
         clip = edit.VideoFileClip(file_name)
         tmp_file = os.path.join(WORKING_DIR_NAME,
-                                'STUPIDMOVIEPY' + note_str + '.mp4')
+                                'STUPIDMOVIEPY' + note_str + instrument_name + '.mp4')
 
         offset, max_vol = None, None
         if offset_map is not None and note_number in offset_map:
@@ -367,16 +342,9 @@ def _load_instrument_clips(instrument_name, instrument_notes, source_dir):
         min_vol = min(min_vol, max_vol)
 
     if edited_offset_map:
-        _write_offset_file(os.path.join(source_dir, instrument_name),
-                           offset_map)
+        _write_offset_file(instrument_path, offset_map)
 
     return res, min_vol
-
-
-def _delete_clips(instrument_clips):
-    keys = instrument_clips.keys()
-    for key in keys:
-        del instrument_clips[key]
 
 
 def _partition(width, height, num_sim_notes, pos):
@@ -421,35 +389,8 @@ def _partition(width, height, num_sim_notes, pos):
         return (pos // 3)*w, (pos % 3)*h, w, h
 
 
-def _process_segment(segment, pulse_length, width, height, max_velocity,
-                     file_name, clips, min_vol, segment_start):
-    parsed_clips = []
-    for note in segment:
-        note_number = note.note_number
-        c, offset, max_vol = clips[note_number]
-        clip = c.copy()
-        num_sim_notes = note.get_num_sim_notes()
-
-        x, y, w, h = _partition(width, height, 
-                                num_sim_notes, note.video_position)
-
-        volume = (float(note.velocity)/float(max_velocity))*(min_vol/max_vol)
-
-        clip = clip.subclip(offset)
-        clip = clip.set_start((note.start - segment_start)*pulse_length)
-        clip = clip.volumex(volume)
-        d = clip.duration
-        clip = clip.set_duration(min(note.duration*pulse_length, d))
-        clip = clip.set_position((x, y))
-        clip = fx.resize(clip, newsize=(w, h))
-        parsed_clips.append(clip)
-    track_clip = edit.CompositeVideoClip(size=(width, height), 
-                                         clips=parsed_clips)
-    track_clip.write_videofile(file_name, fps=24, 
-                               verbose=False, progress_bar=False)
-
-
 def _process_track(instruments, instrument_names, source_dir, 
+                   instrument_config,
                    notes, pulse_length,
                    width, height, max_velocity, 
                    queue, file_name, volumes, num_sim_tracks):
@@ -460,7 +401,8 @@ def _process_track(instruments, instrument_names, source_dir,
     try:
         instrument_clips = {name: _load_instrument_clips(name, 
                                                          instruments[name],
-                                                         source_dir)
+                                                         source_dir,
+                                                         instrument_config)
                            for name in instrument_names}
         parsed_clips = []
         scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
@@ -501,18 +443,7 @@ def _process_track(instruments, instrument_names, source_dir,
         queue.put((MSG_PROCESSED_SEGMENT, 0))
         queue.put((MSG_DONE, 1))
 
-        # parsed_clips = []
-        # # scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
-        # for i, ((start, end), segment) in enumerate(segments.items()):
-        #     file_name = os.path.join(WORKING_DIR_NAME, 
-        #                              _segment_file_name(start, end, 
-        #                                                 instrument_name))
-        #     if os.path.isfile(file_name):
-        #         queue.put((MSG_PROCESSED_SEGMENT, 0))
-        #         continue
-        #     _process_segment(segment, pulse_length, width, 
-        #                      height, max_velocity, file_name, 
-        #                      clips, min_vol, start)
     except Exception as e:
         queue.put((MSG_FATAL_ERROR, e))
+        traceback.print_exc(file=sys.stdout)
 

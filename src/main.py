@@ -40,14 +40,10 @@ def main():
 
     parser.add_argument('-m', '--midifile', type=str, help='The MIDI file', required=True)
     parser.add_argument('-s', '--source', type=str,
-                        help='Path to directory where videos of the instruments can be found')
-    parser.add_argument('-a', 
-                        '--auto',
-                        help='Automatically analyse the video and extract notes',
-                        action='store_true')
+                        help='Path to directory where videos of the instruments can be found.')
+    parser.add_argument('-c', '--config', type=str,
+                        help='JSON file with instrument names mapped to the path to their locations.')
     parser.add_argument('-i', '--instruments', help='Get the instruments', action='store_true')
-    parser.add_argument('-d', '--one',
-                       help='Use the only provided instrument for all instruments', action='store_true')
     parser.add_argument('-v', '--volume', type=str,
                         help="Path to track volume config")
     parser.add_argument('-t', '--threads', type=int, 
@@ -65,8 +61,18 @@ def main():
         parser.error("Volume file \"{}\" not found".format(volume_file))
 
     source_dir = args.source
-    if not args.instruments and not os.path.isdir(source_dir):
+    instrument_config_file = args.config
+    if not args.instruments:
+        if source_dir is None and instrument_config_file is None:
+            parser.error("Either source dir (-s) or " +
+                         "instrument config (-c) required")
+
+    if source_dir is not None and not os.path.isdir(source_dir):
         parser.error("Source directory \"{}\" not found".format(source_dir))
+
+    if instrument_config_file is not None and (not 
+                                          os.path.isfile(instrument_config_file)):
+        parser.error("Instrument config file \"{}\" not found".format(instrument_config))
 
     pattern = midi.read_midifile(midifile)
     pattern.make_ticks_abs()
@@ -81,7 +87,8 @@ def main():
 
         final_clip = videocomposing.compose(instruments, pattern,
                                            1920, 1080, source_dir,
-                                            volume_file, args.threads)
+                                            volume_file, args.threads,
+                                            instrument_config_file)
                                            # 640, 360, source_dir, volume_file)
         final_clip.write_videofile('output.mp4')
 
