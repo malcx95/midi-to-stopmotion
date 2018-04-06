@@ -27,6 +27,8 @@ OFFSET_FILE_NAME = 'offset.json'
 
 MIN_NUM_MEASURES_BEFORE_SPLIT = 2
 
+MAX_NUM_SIM_TRACKS = 9
+
 
 def compose(instruments, midipattern, width, 
             height, source_dir, volume_file_name, num_threads):
@@ -36,52 +38,51 @@ def compose(instruments, midipattern, width,
     resolution = midiparse.get_resolution(midipattern)
     pulse_length = 60.0/(tempo*resolution)
 
-    # instrument_segments   :: {instrument name: (max_velocity, {(start, end): [notes]})}
-    # song_segments         :: [((start, end), [(instrument name, segment file name)])]
+    # analysed_tracks :: {(name1, name2, ...): (notes, max_velocity)}
     
-    instrument_segments, song_segments = _analyse_all_tracks(
-                                            midipattern, resolution)
+    analysed_tracks = _analyse_all_tracks(midipattern, resolution)
 
-    total_num_segments = 0
+    track_clip_file_names = []
+    total_num_tracks = len(analysed_tracks)
     processes = []
-    for instrument_name, (max_velocity, segments) in instrument_segments.items():
-        if instrument_name is None:
-            # FIXME this is ugly
-            instrument_name = "Untitled Instrument 1"
-
+    for instrument_names, (notes, max_velocity) in analysed_tracks.items():
+        
+        file_name = os.path.join(WORKING_DIR_NAME, '-'.join(instrument_names)
+                                 + '.mp4')
+        track_clip_file_names.append((len(notes), file_name))
         queue = multiprocessing.Queue()
-        args = (instruments, instrument_name, source_dir, segments, 
-                pulse_length, width, height, max_velocity, queue)
+        args = (instruments, instrument_names, source_dir, notes, 
+                pulse_length, width, height, 
+                max_velocity, queue, file_name, volumes, total_num_tracks)
         process = multiprocessing.Process(target=_process_track, args=args)
-        processes.append((instrument_name, process, queue))
-        total_num_segments += len(segments)
+        processes.append((instrument_names, process, queue))
 
     running_processes = []
 
-    progress_bar = bar.ChargingBar('', max=total_num_segments)
+    progress_bar = bar.ChargingBar('', max=total_num_tracks)
     done = False
-    num_processed_segments = 0
+    num_processed_tracks = 0
     while not done:
         time.sleep(0.1)
         done_instruments = []
-        for instrument_name, process, queue in running_processes:
+        for instrument_names, process, queue in running_processes:
             while not queue.empty():
                 msg_type, contents = queue.get()
                 if msg_type == MSG_PROCESSED_SEGMENT:
-                    num_processed_segments += 1
+                    num_processed_tracks += 1
                     progress_bar.next()
                 elif msg_type == MSG_DONE:
-                    done_instruments.append(instrument_name)
+                    done_instruments.append(instrument_names)
                 elif msg_type == MSG_FATAL_ERROR:
                     raise contents
 
         processes_changed = False
 
         # remove the instruments that are done
-        for instrument_name in done_instruments:
+        for instrument_names in done_instruments:
             index = 0
             for i, (i_name, p, q) in enumerate(running_processes):
-                if instrument_name == i_name:
+                if instrument_names == i_name:
                     index = i
                     break
             _, process, queue = running_processes.pop(index)
@@ -99,32 +100,23 @@ def compose(instruments, midipattern, width,
 
         if processes_changed and not done:
             progress_message = "Processing instruments: "
-            for name, _, _ in running_processes:
-                progress_message += name + ', '
+            for names, _, _ in running_processes:
+                progress_message += '(' + ', '.join(names) + ')' + ', '
             progress_message = '\n' + progress_message[:-2]
             print(progress_message)
     
     progress_bar.finish()
 
+    track_clip_file_names.sort(key=lambda k: k[0], reverse=True)
+
     final_clips = []
-    for (start, end), simultaneous_segments in song_segments:
-        segment_clips = []
-        num_sim_segments = len(simultaneous_segments)
-        for i, (instrument_name, segment_file) in enumerate(simultaneous_segments):
-            vol = 0.5
-            if volumes is not None:
-                vol = volumes.get(instrument_name, 0.5)
-            x, y, w, h = _partition(width, height, num_sim_segments, i)
-            clip = edit.VideoFileClip(os.path.join(WORKING_DIR_NAME, 
-                                                   segment_file))
-            segment_clips.append(fx.resize(clip, newsize=(w, h))
-                                 .set_position((x, y))
-                                 .volumex(vol))
-
-        comp_clip = edit.CompositeVideoClip(size=(width, height), 
-                                            clips=segment_clips)
-        final_clips.append(comp_clip.set_start(start*pulse_length))
-
+    for i, (_, file_name) in enumerate(track_clip_file_names):
+        clip = edit.VideoFileClip(file_name)
+        x, y, w, h = _partition(width, height, len(track_clip_file_names), i)
+        final_clips.append(
+            fx.resize(clip, newsize=(w, h))
+            .set_position((x, y))
+        )
     return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
 
 
@@ -168,32 +160,71 @@ def _get_common_split_points(all_split_points, resolution):
     return filtered_points
 
 
+def _num_overlapping_notes(track1, track2):
+    """
+    Returns the number of notes in the given tracks that overlap.
+    The given lists of tracks must be sorted by start time.
+    """
+    res = 0
+    for n1 in track1:
+        for n2 in track2:
+            if n2.start > n1.end:
+                break
+            elif n1.start == n2.start or n1.end == n2.end:
+                res += 1
+            elif n1.start < n2.start:
+                if n1.end > n2.start:
+                    res += 1
+            elif n1.end > n2.end:
+                if n1.start < n2.end:
+                    res += 1
+
+    return res
+
+
+def _merge_tracks_with_min_overlap(analysed_tracks):
+    """
+    Merges the two least overlapping tracks 
+    """
+    pairs = []
+    for name1 in analysed_tracks:
+        for name2 in analysed_tracks:
+            track1, _ = analysed_tracks[name1]
+            track2, _ = analysed_tracks[name2]
+            overlap = _num_overlapping_notes(track1, track2)
+            pairs.append((name1, name2, overlap))
+    name1, name2, overlap = min(pairs, key=lambda k: k[2])
+    track1, max_velocity1 = analysed_tracks[name1]
+    track2, max_velocity2 = analysed_tracks[name2]
+    del analysed_tracks[name1]
+    del analysed_tracks[name2]
+    analysed_tracks[name1 + name2] = (sorted(track1 + track2, 
+                                             key=lambda n: n.start), 
+                                      max(max_velocity1, max_velocity2))
+
+    
+
+
+def _merge_analysed_tracks(analysed_tracks):
+    """
+    Merges the tracks of analysed_tracks that don't overlap with eachother.
+    """
+    while len(analysed_tracks.keys()) > MAX_NUM_SIM_TRACKS:
+        _merge_tracks_with_min_overlap(analysed_tracks)
+
+
 def _analyse_all_tracks(midipattern, resolution):
     total_num_ticks = midiparse.get_total_num_ticks(midipattern)
-    analysed_tracks = {midiparse.get_instrument_name(miditrack): 
+    analysed_tracks = {(midiparse.get_instrument_name(miditrack),): 
                        midiparse.analyse_track(miditrack, total_num_ticks)
                        for miditrack in filter(midiparse.has_notes,
                                                midipattern)}
-    all_split_points = [analysis[2] for analysis in analysed_tracks.values()]
-
-    split_tracks = _split_tracks(analysed_tracks,
-                                 _get_common_split_points(all_split_points, 
-                                                          resolution))
-    instrument_segments = {}
-    for range_, instrument_notes in split_tracks.items():
-        for instrument_name, notes in instrument_notes.items():
-            max_velocity = analysed_tracks[instrument_name][1]
-            if instrument_name not in instrument_segments:
-                instrument_segments[instrument_name] = (max_velocity, {})
-            instrument_segments[instrument_name][1][range_] = notes
-
-    song_segments = []
-    for range_ in sorted(split_tracks.keys(), key=lambda r: r[0]):
-        start, end = range_
-        song_segments.append((range_, 
-                              [(name, _segment_file_name(start, end, name))
-                                  for name in split_tracks[range_]]))
-    return instrument_segments, song_segments
+    # pdb.set_trace()
+    _merge_analysed_tracks(analysed_tracks)
+    for track, _ in analysed_tracks.values():
+        midiparse._assign_video_positions(track)
+        
+    return analysed_tracks
 
 
 def _segment_file_name(start, end, instrument):
@@ -418,32 +449,70 @@ def _process_segment(segment, pulse_length, width, height, max_velocity,
                                verbose=False, progress_bar=False)
 
 
-def _process_track(instruments, instrument_name, source_dir, 
-                   segments, pulse_length,
-                   width, height, max_velocity, queue):
+def _process_track(instruments, instrument_names, source_dir, 
+                   notes, pulse_length,
+                   width, height, max_velocity, 
+                   queue, file_name, volumes, num_sim_tracks):
     """
     Composes one midi track into a stop motion video clip.
     Writes a file of this with the given file name.
     """
     try:
-        clips, min_vol = _load_instrument_clips(instrument_name, 
-                                                instruments[instrument_name],
-                                                source_dir)
+        instrument_clips = {name: _load_instrument_clips(name, 
+                                                         instruments[name],
+                                                         source_dir)
+                           for name in instrument_names}
         parsed_clips = []
-        # scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
-        for i, ((start, end), segment) in enumerate(segments.items()):
-            file_name = os.path.join(WORKING_DIR_NAME, 
-                                     _segment_file_name(start, end, 
-                                                        instrument_name))
-            if os.path.isfile(file_name):
-                queue.put((MSG_PROCESSED_SEGMENT, 0))
-                continue
-            _process_segment(segment, pulse_length, width, 
-                             height, max_velocity, file_name, 
-                             clips, min_vol, start)
+        scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
+        if os.path.isfile(file_name):
             queue.put((MSG_PROCESSED_SEGMENT, 0))
+            queue.put((MSG_DONE, 1))
+            return
+        for note in notes:
+            note_number = note.note_number
+            clips, min_vol = instrument_clips[note.instrument_name]
+            vol = 0.5
+            if volumes is not None:
+                vol = volumes.get(note.instrument_name, 0.5)
 
-        queue.put((MSG_DONE, len(segments)))
+            c, offset, max_vol = clips[note_number]
+            clip = c.copy()
+            num_sim_notes = note.get_num_sim_notes()
+
+            x, y, w, h = _partition(width, height, 
+                                    num_sim_notes, note.video_position)
+
+            volume = (float(note.velocity)/float(max_velocity))*(min_vol/max_vol)
+
+            clip = clip.subclip(offset)
+            clip = clip.set_start((note.start)*pulse_length)
+            clip = clip.volumex(volume*vol)
+            d = clip.duration
+            clip = clip.set_duration(min(note.duration*pulse_length, d))
+            clip = clip.set_position((x//scale_factor, y//scale_factor))
+            clip = fx.resize(clip, newsize=(w//scale_factor, h//scale_factor))
+            parsed_clips.append(clip)
+        track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
+                                                   height//scale_factor), 
+                                             clips=parsed_clips)
+        track_clip.write_videofile(file_name, fps=24, 
+                                   verbose=False, progress_bar=False)
+
+        queue.put((MSG_PROCESSED_SEGMENT, 0))
+        queue.put((MSG_DONE, 1))
+
+        # parsed_clips = []
+        # # scale_factor = int(math.floor(math.log(num_sim_tracks, 2) + 1))
+        # for i, ((start, end), segment) in enumerate(segments.items()):
+        #     file_name = os.path.join(WORKING_DIR_NAME, 
+        #                              _segment_file_name(start, end, 
+        #                                                 instrument_name))
+        #     if os.path.isfile(file_name):
+        #         queue.put((MSG_PROCESSED_SEGMENT, 0))
+        #         continue
+        #     _process_segment(segment, pulse_length, width, 
+        #                      height, max_velocity, file_name, 
+        #                      clips, min_vol, start)
     except Exception as e:
         queue.put((MSG_FATAL_ERROR, e))
 

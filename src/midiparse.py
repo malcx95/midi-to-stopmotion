@@ -19,7 +19,7 @@ class TrackEvent:
 
 class Note:
 
-    def __init__(self, note_number, start, end, velocity):
+    def __init__(self, note_number, start, end, velocity, instrument_name):
         self.note_number = note_number
         self.octave = note_number_to_octave(note_number)
         self.tone = note_number_to_tone(note_number, self.octave)
@@ -29,6 +29,7 @@ class Note:
         self.velocity = velocity
         self.video_position = None
         self.num_sim_notes = 0
+        self.instrument_name = instrument_name
         # self.neighboring_notes = []
     
     def get_num_sim_notes(self):
@@ -90,25 +91,22 @@ def analyse_track(miditrack, total_num_ticks):
                 p = _event_pitch(ev)
                 if _event_pitch(ev) == _event_pitch(event):
                     vel = ev.get_velocity()
-                    note = Note(p, ev.tick, event.tick, vel)
+                    note = Note(p, ev.tick, event.tick, vel,
+                                get_instrument_name(miditrack))
                     max_velocity = max(vel, max_velocity)
                     parsed_notes.append(note)
                     curr_events.remove(ev)
                     break
     parsed_notes.sort(key=lambda n: n.start)
-    split_points = _parse_events(parsed_notes, total_num_ticks)
-    return parsed_notes, max_velocity, split_points
+    return parsed_notes, max_velocity#, split_points
 
 
-def _parse_events(parsed_notes, total_num_ticks):
+def _assign_video_positions(parsed_notes):
     """
-    Assigns the neighboring_notes lists to each note
-    as well as their video positions. Also returns
-    a list of timestamps where it's safe to split
-    the song.
+    Assigns video positions and num_sim_notes to all notes.
     """
     note_starts = {}
-    note_ends = {}
+    # note_ends = {}
 
     # create dictionaries containing information on when
     # the notes start and end
@@ -118,28 +116,10 @@ def _parse_events(parsed_notes, total_num_ticks):
             note_starts[start] = []
         note_starts[start].append(note)
 
-        end = note.end
-        if not end in note_ends:
-            note_ends[end] = []
-        note_ends[end].append(note)
-
-    event_times = sorted(note_starts.keys() + note_ends.keys())
-    total_events = {}
-    curr_sim_notes = 0
-    max_sim_notes = 0
-    curr_notes = []
-
-    # create track events containing which
-    # notes are playing at a particular instance
-    for time in event_times:
-        if time in note_starts:
-            curr_notes = _list_union(curr_notes, note_starts[time])
-            # started_notes = note_starts[time]
-        if time in note_ends:
-            curr_notes = _list_subtract(curr_notes, note_ends[time])
-
-        max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
-        total_events[time] = TrackEvent(time, curr_notes)
+        # end = note.end
+        # if not end in note_ends:
+        #     note_ends[end] = []
+        # note_ends[end].append(note)
 
     # for each of the notes in the list of parsed notes,
     # fill their neighboring notes lists.
@@ -148,7 +128,21 @@ def _parse_events(parsed_notes, total_num_ticks):
             n.video_position = i
             n.num_sim_notes = len(notes)
 
-    silent_intervals, non_silent_intervals = _find_intervals_of_silence(parsed_notes)
+    # event_times = sorted(note_starts.keys() + note_ends.keys())
+
+    # create track events containing which
+    # notes are playing at a particular instance
+    # for time in event_times:
+    #     if time in note_starts:
+    #         curr_notes = _list_union(curr_notes, note_starts[time])
+    #         # started_notes = note_starts[time]
+    #     if time in note_ends:
+    #         curr_notes = _list_subtract(curr_notes, note_ends[time])
+
+    #     max_simultaneous_notes = max(max_sim_notes, len(curr_notes))
+    #     total_events[time] = TrackEvent(time, curr_notes)
+
+
     # while time < total_num_ticks:
     #     event = total_events.get(time, None)
     #     if event is None and curr_num_notes == 0:
@@ -159,29 +153,32 @@ def _parse_events(parsed_notes, total_num_ticks):
     #             split_points.add(time)
     #     time += 1
 
-    return split_points
+    # return split_points
 
 
-def find_intervals_of_silence(parsed_notes):
-    time = 0
-    curr_num_notes = 0
-    note_intervals = set()
-    for note in parsed_notes:
-        range_ = (note.start, note.end)
-        if range_ not in note_intervals:
-            note_intervals.add(range_)
-
-    silent_intervals = []
-    non_silent_intervals = []
-
-    last_end = -1
-    last_start = -1
-    for interval in sorted(note_intervals):
-        start, end = interval
-        if start != last_end:
-            non_silent_intervals.append((last_start, last_end))
-
-    return silent_intervals, non_silent_intervals
+# TODO
+# IDEA: just mix the notes of non-overlapping tracks, and process
+# the tracks as you used to.
+# def find_intervals_of_silence(parsed_notes):
+#     time = 0
+#     curr_num_notes = 0
+#     note_intervals = set()
+#     for note in parsed_notes:
+#         range_ = (note.start, note.end)
+#         if range_ not in note_intervals:
+#             note_intervals.add(range_)
+# 
+#     silent_intervals = []
+#     non_silent_intervals = []
+# 
+#     last_end = -1
+#     last_start = -1
+#     for interval in sorted(note_intervals):
+#         start, end = interval
+#         if start != last_end:
+#             non_silent_intervals.append((last_start, last_end))
+# 
+#     return silent_intervals, non_silent_intervals
 
 
 def _note_lists_equal(l1, l2):
@@ -300,11 +297,7 @@ def get_instrument_name(miditrack, number=None):
     for event in miditrack:
         if isinstance(event, midi.TrackNameEvent):
             return event.text
-    if number is not None:
-        # FIXME this is ugly
-        return "Untitled Instrument " + str(number)
-    else:
-        return None
+    return "Untitled Instrument" + str(len(miditrack))
 
 
 def get_song_name(midipattern):
