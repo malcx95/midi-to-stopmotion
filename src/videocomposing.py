@@ -437,7 +437,7 @@ def _process_track(instruments, instrument_names, source_dir,
         track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
                                                    height//scale_factor), 
                                              clips=parsed_clips)
-        track_clip.write_videofile(file_name, fps=24, 
+        track_clip.write_videofile(file_name, fps=30,
                                    verbose=False, progress_bar=False)
 
         queue.put((MSG_PROCESSED_SEGMENT, 0))
