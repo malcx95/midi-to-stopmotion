@@ -49,6 +49,9 @@ def main():
     parser.add_argument('-t', '--threads', type=int, 
                         help='Maximum number of concurrently processed instruments',
                         default=2)
+    parser.add_argument('-r', '--resolution', type=str, 
+                        help='Resolution of output, like 1920x1080',
+                        default='1920x1080')
 
     args = parser.parse_args()
 
@@ -85,8 +88,9 @@ def main():
         # load the that each instrument plays
         instruments = midiparse.get_instruments(pattern)
 
+        w_res, h_res = args.resolution.split('x')
         final_clip = videocomposing.compose(instruments, pattern,
-                                           1920, 1080, source_dir,
+                                            int(w_res), int(h_res), source_dir,
                                             volume_file, args.threads,
                                             instrument_config_file)
                                            # 640, 360, source_dir, volume_file)
