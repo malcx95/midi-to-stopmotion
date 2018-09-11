@@ -7,8 +7,6 @@ import sys
 import os
 import midiparse
 import videocomposing
-import moviepy.editor as edit
-
 
 TERM_HEADER = '\033[95m'
 TERM_OKBLUE = '\033[94m'
@@ -94,7 +92,7 @@ def main():
                                             volume_file, args.threads,
                                             instrument_config_file)
                                            # 640, 360, source_dir, volume_file)
-        final_clip.write_videofile('output.mp4')
+        final_clip.save('output.mp4')
 
     sys.exit(0)
 

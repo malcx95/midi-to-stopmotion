@@ -1,6 +1,6 @@
 import multiprocessing
+import vidpy
 import moviepy.editor as edit
-import moviepy.video.fx.all as fx
 import pdb
 import midiparse
 import random
@@ -113,13 +113,11 @@ def compose(instruments, midipattern, width,
 
     final_clips = []
     for i, (_, file_name) in enumerate(track_clip_file_names):
-        clip = edit.VideoFileClip(file_name)
+        clip = vidpy.Clip(file_name)
         x, y, w, h = _partition(width, height, len(track_clip_file_names), i)
-        final_clips.append(
-            fx.resize(clip, newsize=(w, h))
-            .set_position((x, y))
-        )
-    return edit.CompositeVideoClip(size=(width, height), clips=final_clips)
+        clip.position(x = x, y = y, w = w, h = h)
+        final_clips.append(clip)
+    return vidpy.Composition(clips=final_clips, width = width, height = height)
 
 
 def _create_working_dir():
@@ -338,7 +336,7 @@ def _load_instrument_clips(instrument_name, instrument_notes,
             edited_offset_map = True
             os.remove(tmp_file)
 
-        res[note_number] = (clip, offset, max_vol)
+        res[note_number] = (vidpy.Clip(file_name), offset, max_vol)
         min_vol = min(min_vol, max_vol)
 
     if edited_offset_map:
@@ -418,7 +416,7 @@ def _process_track(instruments, instrument_names, source_dir,
                 vol = volumes.get(note.instrument_name, 0.5)
 
             c, offset, max_vol = clips[note_number]
-            clip = c.copy()
+            clip = vidpy.Clip(c.resource)
             num_sim_notes = note.get_num_sim_notes()
 
             x, y, w, h = _partition(width, height, 
@@ -426,19 +424,18 @@ def _process_track(instruments, instrument_names, source_dir,
 
             volume = (float(note.velocity)/float(max_velocity))*(min_vol/max_vol)
 
-            clip = clip.subclip(offset)
-            clip = clip.set_start((note.start)*pulse_length)
-            clip = clip.volumex(volume*vol)
+            clip.cut(start=offset)
+            clip.set_offset((note.start)*pulse_length)
+            clip.volume(volume*vol)
             d = clip.duration
-            clip = clip.set_duration(min(note.duration*pulse_length, d))
-            clip = clip.set_position((x//scale_factor, y//scale_factor))
-            clip = fx.resize(clip, newsize=(w//scale_factor, h//scale_factor))
+            clip.set_duration(min(note.duration*pulse_length, d))
+            clip.position(
+                x = x//scale_factor, y = y//scale_factor,
+                w = w//scale_factor, h = h//scale_factor
+            )
             parsed_clips.append(clip)
-        track_clip = edit.CompositeVideoClip(size=(width//scale_factor,
-                                                   height//scale_factor), 
-                                             clips=parsed_clips)
-        track_clip.write_videofile(file_name, fps=30,
-                                   verbose=False, progress_bar=False)
+        track_clip = vidpy.Composition(clips=parsed_clips, width=width//scale_factor, height=height//scale_factor)
+        track_clip.save(file_name)
 
         queue.put((MSG_PROCESSED_SEGMENT, 0))
         queue.put((MSG_DONE, 1))
